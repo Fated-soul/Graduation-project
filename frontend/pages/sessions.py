@@ -109,7 +109,7 @@ def render() -> None:
     left, right = st.columns(2)
     with left:
         if st.button("进入多模态复核", disabled=status_value != "ready", width="stretch"):
-            _open_page("多模态复核")
+            _open_review(session)
     with right:
         if st.button("进入 Agent 辅助决策", disabled=status_value != "ready", width="stretch"):
             _open_page("Agent 辅助决策")
@@ -150,3 +150,14 @@ def _format_duration(value: object) -> str:
 def _open_page(page_name: str) -> None:
     st.session_state.current_page = page_name
     st.rerun()
+
+
+def _open_review(session: dict) -> None:
+    """Carry the selected subject and session into the review workspace."""
+    subject_id = str(session.get("subject_code") or "").strip()
+    session_id = session.get("id")
+    if subject_id:
+        st.session_state.review_subject_id = subject_id
+    if session_id is not None:
+        st.session_state.review_primary_session = int(session_id)
+    _open_page("多模态复核")

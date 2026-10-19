@@ -69,7 +69,13 @@ def render() -> None:
         return
 
     subject_ids = [str(item["subject_id"]) for item in subjects]
-    subject_id = st.selectbox("实验动物", subject_ids)
+    if st.session_state.get("review_subject_id") not in subject_ids:
+        st.session_state.review_subject_id = subject_ids[0]
+    subject_id = st.selectbox(
+        "实验动物",
+        subject_ids,
+        key="review_subject_id",
+    )
     sessions = get_sessions(subject_id=subject_id, limit=300)
     if not sessions:
         st.info("该实验动物暂无可复核会话。")
@@ -109,12 +115,18 @@ def _session_select(label: str, sessions: list[dict[str, Any]], key: str) -> int
         options[0],
     )
     stored = st.session_state.get(key)
-    default = int(stored) if stored in options else ready
+    try:
+        preferred = int(stored)
+    except (TypeError, ValueError):
+        preferred = ready
+    if preferred not in options:
+        preferred = ready
+    if st.session_state.get(key) != preferred:
+        st.session_state[key] = preferred
     return int(
         st.selectbox(
             label,
             options,
-            index=options.index(default),
             format_func=lambda value: labels[value],
             key=key,
         )

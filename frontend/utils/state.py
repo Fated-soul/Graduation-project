@@ -25,6 +25,8 @@ def initialize_session_state() -> None:
         "agent_confirmed_recommendations": set(),
         "selected_experiment": "EXP-001",
         "selected_dataset_session": None,
+        "review_subject_id": None,
+        "review_primary_session": None,
         "control_logs": [],
         "data_refresh_count": 0,
         "last_refresh_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
