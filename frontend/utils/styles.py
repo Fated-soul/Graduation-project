@@ -57,6 +57,191 @@ def load_global_styles() -> None:
     }
 
     /* Agent 对话页 */
+    .st-key-agent_question_composer {
+        position: relative;
+        overflow: hidden;
+        padding: 1.25rem 1.35rem 1.15rem !important;
+        border: 1px solid rgba(14, 116, 144, .18) !important;
+        border-radius: 16px !important;
+        background:
+            linear-gradient(135deg, rgba(255,255,255,.98), rgba(244,251,255,.96)) !important;
+        box-shadow: 0 15px 36px rgba(18, 64, 102, .09) !important;
+    }
+    .st-key-agent_question_composer::before {
+        content: "";
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 4px;
+        background: linear-gradient(180deg, #0284c7, #14b8a6);
+    }
+    .agent-composer-header {
+        display: flex;
+        align-items: center;
+        gap: .85rem;
+        margin-bottom: 1.2rem;
+    }
+    .agent-composer-mark {
+        width: 44px;
+        height: 44px;
+        flex: 0 0 44px;
+        display: grid;
+        place-items: center;
+        border-radius: 12px;
+        color: #fff;
+        font-size: 1.05rem;
+        font-weight: 800;
+        background: linear-gradient(145deg, #087fb5, #0ea5a4);
+        box-shadow: 0 8px 18px rgba(8, 127, 181, .2);
+    }
+    .agent-composer-heading {
+        min-width: 0;
+        flex: 1;
+    }
+    .agent-composer-heading strong {
+        display: block;
+        margin-bottom: .12rem;
+        color: #163958;
+        font-size: 1.03rem;
+        line-height: 1.45;
+    }
+    .agent-composer-heading span {
+        display: block;
+        color: #718398;
+        font-size: .79rem;
+        line-height: 1.45;
+    }
+    .agent-composer-ready {
+        display: flex;
+        align-items: center;
+        gap: .4rem;
+        padding: .38rem .68rem;
+        border: 1px solid rgba(16,185,129,.18);
+        border-radius: 999px;
+        color: #08785d;
+        background: #edf9f4;
+        font-size: .73rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+    .agent-composer-ready i {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #10b981;
+        box-shadow: 0 0 0 4px rgba(16,185,129,.12);
+    }
+    .agent-composer-section-label,
+    .agent-composer-question-label strong {
+        color: #294b68;
+        font-size: .78rem;
+        font-weight: 750;
+    }
+    .agent-composer-section-label {
+        margin-bottom: .5rem;
+    }
+    .agent-composer-question-label {
+        display: flex;
+        align-items: baseline;
+        gap: .65rem;
+        margin: .95rem 0 .48rem;
+    }
+    .agent-composer-question-label span {
+        color: #8493a5;
+        font-size: .74rem;
+    }
+    .st-key-agent_question_composer .st-key-agent_question_0 button,
+    .st-key-agent_question_composer .st-key-agent_question_1 button,
+    .st-key-agent_question_composer .st-key-agent_question_2 button {
+        min-height: 50px;
+        justify-content: flex-start;
+        padding-inline: 1rem;
+        border-color: rgba(55, 103, 140, .16);
+        border-radius: 10px;
+        color: #315671;
+        background: rgba(255,255,255,.9);
+        box-shadow: 0 4px 12px rgba(18,64,102,.035);
+    }
+    .st-key-agent_question_composer .st-key-agent_question_0 button:hover,
+    .st-key-agent_question_composer .st-key-agent_question_1 button:hover,
+    .st-key-agent_question_composer .st-key-agent_question_2 button:hover {
+        border-color: rgba(14,165,233,.42);
+        color: #087eae;
+        background: #f4fbff;
+        transform: translateY(-1px);
+    }
+    .st-key-agent_question_composer .st-key-agent_question_0 button[kind="primary"],
+    .st-key-agent_question_composer .st-key-agent_question_1 button[kind="primary"],
+    .st-key-agent_question_composer .st-key-agent_question_2 button[kind="primary"] {
+        border-color: #0f91bd;
+        color: #fff;
+        background: linear-gradient(135deg, #087fb5, #0ea5a4);
+        box-shadow: 0 8px 18px rgba(8,127,181,.16);
+    }
+    .st-key-agent_question_composer .st-key-dataset_agent_question textarea {
+        min-height: 132px !important;
+        padding: .9rem 1rem;
+        border: 1px solid rgba(55,103,140,.17);
+        border-radius: 11px;
+        color: #17324d;
+        background: rgba(255,255,255,.96);
+        line-height: 1.65;
+        box-shadow: inset 0 1px 2px rgba(18,64,102,.03);
+        transition: border-color .18s ease, box-shadow .18s ease;
+    }
+    .st-key-agent_question_composer .st-key-dataset_agent_question textarea:focus {
+        border-color: #0ea5c5;
+        box-shadow: 0 0 0 3px rgba(14,165,197,.11);
+    }
+    .agent-composer-guidance {
+        display: flex;
+        align-items: center;
+        min-height: 42px;
+        color: #718398;
+        font-size: .75rem;
+        line-height: 1.5;
+    }
+    .agent-composer-guidance::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        flex: 0 0 6px;
+        margin-right: .48rem;
+        border-radius: 50%;
+        background: #22a98d;
+    }
+    .st-key-agent_question_composer .st-key-agent_question_submit button {
+        min-height: 42px;
+        border: 0;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #087fb5, #0e9f98);
+        box-shadow: 0 8px 18px rgba(8,127,181,.17);
+    }
+    .st-key-agent_question_composer .st-key-agent_question_submit button:hover {
+        background: linear-gradient(135deg, #076f9f, #0b8d87);
+        transform: translateY(-1px);
+    }
+    .st-key-agent_question_composer .st-key-agent_question_submit button:disabled {
+        border: 1px solid rgba(55,103,140,.12);
+        color: #9baabb;
+        background: #eef3f6;
+        box-shadow: none;
+        transform: none;
+    }
+    @media (max-width: 780px) {
+        .st-key-agent_question_composer {
+            padding: 1rem .9rem !important;
+        }
+        .agent-composer-ready {
+            display: none;
+        }
+        .agent-composer-question-label {
+            display: block;
+        }
+        .agent-composer-question-label span {
+            display: block;
+            margin-top: .15rem;
+        }
+    }
     .agent-side-intro {
         padding: 1rem 1.05rem;
         margin-bottom: .75rem;

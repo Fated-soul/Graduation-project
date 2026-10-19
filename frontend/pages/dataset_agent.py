@@ -29,6 +29,11 @@ QUESTION_PRESETS = (
         "根据当前证据，下一阶段应重点观察哪些变化？",
     ),
 )
+QUESTION_PRESET_ICONS = (
+    ":material/biotech:",
+    ":material/fact_check:",
+    ":material/event_upcoming:",
+)
 LEGACY_QUESTION_TRANSLATIONS = {
     (
         "Assess whether this FC session supports fear-memory formation by jointly "
@@ -121,9 +126,24 @@ def _render_session_context(session: dict) -> None:
 def _render_composer(session_id: int) -> None:
     render_section_title("向 Agent 提问", "选择关注方向或输入具体研究问题")
 
-    with st.container(border=True):
-        st.markdown("**开始一轮新的辅助分析**")
-        st.caption("问题越具体，Agent 越容易给出可核验的判断依据。")
+    if "dataset_agent_question" not in st.session_state:
+        st.session_state.dataset_agent_question = ""
+
+    with st.container(border=True, key="agent_question_composer"):
+        st.markdown(
+            """
+            <div class="agent-composer-header">
+                <div class="agent-composer-mark">研</div>
+                <div class="agent-composer-heading">
+                    <strong>新建辅助分析</strong>
+                    <span>围绕当前造模会话提出一个可核验的研究问题</span>
+                </div>
+                <div class="agent-composer-ready"><i></i>Agent 已就绪</div>
+            </div>
+            <div class="agent-composer-section-label">选择分析方向</div>
+            """,
+            unsafe_allow_html=True,
+        )
 
         preset_columns = st.columns(len(QUESTION_PRESETS))
         for index, (column, (label, prompt)) in enumerate(
@@ -133,26 +153,55 @@ def _render_composer(session_id: int) -> None:
                 st.button(
                     label,
                     key=f"agent_question_{index}",
+                    type=(
+                        "primary"
+                        if st.session_state.dataset_agent_question == prompt
+                        else "secondary"
+                    ),
+                    icon=QUESTION_PRESET_ICONS[index],
+                    help=prompt,
                     on_click=_set_question,
                     args=(prompt,),
                     width="stretch",
                 )
 
-        if "dataset_agent_question" not in st.session_state:
-            st.session_state.dataset_agent_question = ""
+        st.markdown(
+            """
+            <div class="agent-composer-question-label">
+                <strong>研究问题</strong>
+                <span>描述希望 Agent 重点判断的现象、证据或后续安排</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         question = st.text_area(
             "本次希望重点评估什么？",
             key="dataset_agent_question",
             placeholder="例如：刺激后冻结行为与钙活动是否共同支持恐惧记忆形成？",
-            height=112,
+            height=132,
+            label_visibility="collapsed",
         )
-        if st.button(
-            "发送问题",
-            type="primary",
-            width="stretch",
-            disabled=not question.strip(),
-        ):
-            _submit_question(session_id, question.strip())
+
+        guidance, action = st.columns([4.8, 1.25], vertical_alignment="center")
+        with guidance:
+            st.markdown(
+                """
+                <div class="agent-composer-guidance">
+                    <span>回答将结合当前会话证据与研究知识库形成，并保留完整分析记录。</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        with action:
+            if st.button(
+                "提交分析",
+                key="agent_question_submit",
+                type="primary",
+                icon=":material/arrow_forward:",
+                width="stretch",
+                disabled=not question.strip(),
+            ):
+                _submit_question(session_id, question.strip())
 
 
 def _render_conversation(session: dict, analyses: list[dict]) -> None:
