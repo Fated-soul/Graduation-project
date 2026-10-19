@@ -97,7 +97,7 @@ def test_agent_question_shortcut_updates_the_input() -> None:
     app.run()
 
     prompt = "不同模态之间是否相互支持？哪些结论仍需人工复核？"
-    shortcut = next(button for button in app.button if button.label == prompt)
+    shortcut = next(button for button in app.button if button.label == "检查证据一致性")
     shortcut.click()
     app.run()
 
