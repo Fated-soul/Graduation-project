@@ -1,0 +1,30 @@
+# This repository publishes only the current graduation project code.
+/*
+
+# Root project files.
+!/.gitignore
+!/README.md
+
+# Runtime configuration and source packages.
+!/.streamlit/
+!/.streamlit/**
+!/agent/
+!/agent/**
+!/backend/
+!/backend/**
+!/frontend/
+!/frontend/**
+
+# Never publish credentials, local environments or generated files.
+**/.env
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.venv/
+**/venv/
+agent/cache/
+backend/cache/
+*.log
+*.tmp
+.DS_Store
+
