@@ -1312,11 +1312,34 @@ def load_global_styles() -> None:
         border-radius: 8px;
         background: #ffffff;
     }
+    .block-container {
+        animation: none;
+    }
     [data-baseweb="select"] > div,
     [data-testid="stNumberInput"] input,
     [data-testid="stTextInput"] input,
     [data-testid="stChatInput"] textarea {
         border-radius: 6px !important;
+    }
+    [data-baseweb="popover"] {
+        opacity: 1 !important;
+        filter: none !important;
+        backdrop-filter: none !important;
+    }
+    [data-baseweb="popover"] [role="listbox"] {
+        color: #17364e !important;
+        background: #ffffff !important;
+    }
+    [data-baseweb="popover"] [role="option"] {
+        opacity: 1 !important;
+        color: #17364e !important;
+        background-color: #ffffff;
+        text-shadow: none !important;
+        font-weight: 520;
+    }
+    [data-baseweb="popover"] [role="option"]:hover,
+    [data-baseweb="popover"] [aria-selected="true"] {
+        background-color: #e8f4f8 !important;
     }
     .toolbar-label {
         margin-bottom: .35rem;

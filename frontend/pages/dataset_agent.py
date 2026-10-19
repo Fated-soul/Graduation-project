@@ -41,6 +41,11 @@ DEFAULT_ANALYSIS_QUESTION = "请综合评估本次造模会话的多模态证据
 def render() -> None:
     if st.session_state.pop("dataset_agent_clear_question", False):
         st.session_state.dataset_agent_question = ""
+    clear_follow_up_key = st.session_state.pop(
+        "dataset_agent_clear_follow_up_input", None
+    )
+    if clear_follow_up_key:
+        st.session_state.pop(str(clear_follow_up_key), None)
     notice = st.session_state.pop("dataset_agent_notice", None)
 
     sessions = get_sessions(limit=300)
@@ -90,7 +95,7 @@ def render() -> None:
         return
 
     analyses = get_session_analyses(int(selected_id))
-    _render_composer(int(selected_id), analyses)
+    _render_composer(int(selected_id))
     _render_conversation(selected, analyses)
 
 
@@ -112,26 +117,12 @@ def _render_session_context(session: dict) -> None:
         )
 
 
-def _render_composer(session_id: int, analyses: list[dict]) -> None:
+def _render_composer(session_id: int) -> None:
     render_section_title("向 Agent 提问", "选择关注方向或输入具体研究问题")
-    target = st.session_state.get("dataset_agent_follow_up_target")
 
     with st.container(border=True):
-        if target:
-            context, cancel = st.columns([5, 1])
-            with context:
-                st.markdown("**正在围绕一条既有结论追问**")
-                st.caption(_truncate(_display_question(target.get("question")), 90))
-            with cancel:
-                st.button(
-                    "取消追问",
-                    key="cancel_dataset_follow_up",
-                    on_click=_cancel_follow_up,
-                    width="stretch",
-                )
-        else:
-            st.markdown("**开始一轮新的辅助分析**")
-            st.caption("问题越具体，Agent 越容易给出可核验的判断依据。")
+        st.markdown("**开始一轮新的辅助分析**")
+        st.caption("问题越具体，Agent 越容易给出可核验的判断依据。")
 
         preset_columns = st.columns(len(QUESTION_PRESETS))
         for index, (column, (label, prompt)) in enumerate(
@@ -154,14 +145,13 @@ def _render_composer(session_id: int, analyses: list[dict]) -> None:
             placeholder="例如：刺激后冻结行为与钙活动是否共同支持恐惧记忆形成？",
             height=112,
         )
-        action_label = "发送追问" if target else "发送问题"
         if st.button(
-            action_label,
+            "发送问题",
             type="primary",
             width="stretch",
             disabled=not question.strip(),
         ):
-            _submit_question(session_id, question.strip(), target, analyses)
+            _submit_question(session_id, question.strip())
 
 
 def _render_conversation(session: dict, analyses: list[dict]) -> None:
@@ -227,7 +217,6 @@ def _render_analysis_exchange(session: dict, analysis: dict) -> None:
                     on_click=_start_follow_up,
                     args=(
                         int(analysis_id),
-                        _display_question(analysis.get("question")),
                         int(session["id"]),
                     ),
                     width="stretch",
@@ -250,6 +239,50 @@ def _render_analysis_exchange(session: dict, analysis: dict) -> None:
                 key=f"analysis_json_{analysis_id}",
                 width="stretch",
             )
+
+        target = st.session_state.get("dataset_agent_follow_up_target")
+        if (
+            analysis_id is not None
+            and target
+            and int(target.get("analysis_id") or -1) == int(analysis_id)
+        ):
+            _render_inline_follow_up(int(session["id"]), int(analysis_id))
+
+
+def _render_inline_follow_up(session_id: int, analysis_id: int) -> None:
+    input_key = f"dataset_follow_up_input_{analysis_id}"
+    with st.container(border=True):
+        st.markdown("**继续追问这条结论**")
+        st.caption("Agent 会结合原问题、原结论和当前会话证据继续回答。")
+        follow_up = st.text_area(
+            "追问内容",
+            key=input_key,
+            placeholder="例如：哪些证据仍需人工复核，结论的适用范围是什么？",
+            height=96,
+        )
+        cancel, submit = st.columns([1, 2])
+        with cancel:
+            st.button(
+                "取消",
+                key=f"cancel_follow_up_{analysis_id}",
+                on_click=_cancel_follow_up,
+                args=(input_key,),
+                width="stretch",
+            )
+        with submit:
+            if st.button(
+                "发送追问",
+                key=f"submit_follow_up_{analysis_id}",
+                type="primary",
+                width="stretch",
+                disabled=not follow_up.strip(),
+            ):
+                _submit_follow_up(
+                    session_id,
+                    analysis_id,
+                    follow_up.strip(),
+                    input_key,
+                )
 
 
 def _render_evidence_and_sources(evidence: list, sources: list) -> None:
@@ -275,38 +308,34 @@ def _render_evidence_and_sources(evidence: list, sources: list) -> None:
         st.caption("本条结论未引用外部研究资料。")
 
 
-def _submit_question(
-    session_id: int,
-    question: str,
-    target: dict | None,
-    analyses: list[dict],
-) -> None:
-    if target:
-        known_ids = {int(item["id"]) for item in analyses if item.get("id") is not None}
-        parent_id = int(target["analysis_id"])
-        if parent_id not in known_ids:
-            st.session_state.pop("dataset_agent_follow_up_target", None)
-            st.error("原决策记录已发生变化，请重新选择需要追问的结论。")
-            return
-        spinner_text = "正在结合原结论与当前证据形成答复……"
-    else:
-        parent_id = None
-        spinner_text = "正在汇总当前会话的多模态证据与研究资料……"
-
-    with st.spinner(spinner_text):
-        if parent_id is None:
-            response = analyze_session(session_id, question)
-        else:
-            response = follow_up_session_analysis(session_id, parent_id, question)
+def _submit_question(session_id: int, question: str) -> None:
+    with st.spinner("正在汇总当前会话的多模态证据与研究资料……"):
+        response = analyze_session(session_id, question)
 
     if response.get("success") is False:
         st.error(str(response.get("message") or "分析失败。"))
         return
 
-    st.session_state.dataset_agent_notice = (
-        "追问答复已形成并保存。" if parent_id is not None else "辅助决策已形成并保存。"
-    )
+    st.session_state.dataset_agent_notice = "辅助决策已形成并保存。"
     st.session_state.dataset_agent_clear_question = True
+    st.rerun()
+
+
+def _submit_follow_up(
+    session_id: int,
+    analysis_id: int,
+    question: str,
+    input_key: str,
+) -> None:
+    with st.spinner("正在结合原结论与当前证据形成答复……"):
+        response = follow_up_session_analysis(session_id, analysis_id, question)
+
+    if response.get("success") is False:
+        st.error(str(response.get("message") or "追问失败。"))
+        return
+
+    st.session_state.dataset_agent_notice = "追问答复已形成并保存。"
+    st.session_state.dataset_agent_clear_follow_up_input = input_key
     st.session_state.pop("dataset_agent_follow_up_target", None)
     st.rerun()
 
@@ -344,18 +373,16 @@ def _set_question(question: str) -> None:
     st.session_state.dataset_agent_question = question
 
 
-def _start_follow_up(analysis_id: int, question: str, session_id: int) -> None:
+def _start_follow_up(analysis_id: int, session_id: int) -> None:
     st.session_state.dataset_agent_follow_up_target = {
         "analysis_id": analysis_id,
-        "question": question,
         "session_id": session_id,
     }
-    st.session_state.dataset_agent_question = ""
 
 
-def _cancel_follow_up() -> None:
+def _cancel_follow_up(input_key: str) -> None:
     st.session_state.pop("dataset_agent_follow_up_target", None)
-    st.session_state.dataset_agent_question = ""
+    st.session_state.pop(input_key, None)
 
 
 def _clear_stale_follow_up(session_id: int) -> None:
