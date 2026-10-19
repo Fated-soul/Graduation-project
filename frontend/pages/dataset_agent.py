@@ -12,6 +12,7 @@ from data.public_dataset import (
     get_session_analyses,
     get_sessions,
 )
+from utils.analysis_report_pdf import build_analysis_report_pdf
 
 
 QUESTION_PRESETS = (
@@ -284,11 +285,13 @@ def _render_analysis_exchange(
 
         with report:
             st.download_button(
-                "下载评估报告",
-                data=_analysis_markdown(analysis),
-                file_name=f"{session.get('subject_code', 'animal')}_造模评估.md",
-                mime="text/markdown",
-                key=f"analysis_md_{analysis_id}",
+                "下载 PDF 报告",
+                data=_analysis_pdf(session, analysis),
+                file_name=(
+                    f"{session.get('subject_code', 'animal')}_辅助决策_{analysis_id}.pdf"
+                ),
+                mime="application/pdf",
+                key=f"analysis_pdf_{analysis_id}",
                 width="stretch",
             )
         with record:
@@ -402,33 +405,9 @@ def _submit_follow_up(
     st.rerun()
 
 
-def _analysis_markdown(analysis: dict) -> str:
-    confidence = analysis.get("confidence")
-    confidence_text = (
-        f"{_normalise_confidence(confidence):.0%}"
-        if confidence is not None
-        else "未评定"
-    )
-    evidence = "\n".join(f"- {item}" for item in analysis.get("evidence") or []) or "- 暂无"
-    sources = analysis.get("knowledge_sources") or []
-    source_lines = []
-    for source in sources:
-        title = str(source.get("title") or "研究资料")
-        section = str(source.get("section") or "").strip()
-        label = f"{title} · {section}" if section else title
-        url = str(source.get("source_url") or "").strip()
-        source_lines.append(f"- [{label}]({url})" if url else f"- {label}")
-    source_text = "\n".join(source_lines) or "- 本次未使用外部研究资料"
-    return (
-        "# 实验动物多模态智能造模评估报告\n\n"
-        f"形成时间：{format_datetime(analysis.get('created_at'))}\n\n"
-        f"证据充分度：{confidence_text}\n\n"
-        f"## 评估问题\n\n{_display_question(analysis.get('question'))}\n\n"
-        f"## 评估结论\n\n{analysis.get('summary') or ''}\n\n"
-        f"## 判断依据\n\n{evidence}\n\n"
-        f"## 后续建议\n\n{analysis.get('recommendation') or '暂无'}\n"
-        f"\n## 参考资料\n\n{source_text}\n"
-    )
+@st.cache_data(show_spinner=False)
+def _analysis_pdf(session: dict, analysis: dict) -> bytes:
+    return build_analysis_report_pdf(session, analysis)
 
 
 def _set_question(question: str) -> None:
