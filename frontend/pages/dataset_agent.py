@@ -12,7 +12,7 @@ from data.public_dataset import (
     get_session_analyses,
     get_sessions,
 )
-from utils.analysis_report_pdf import build_analysis_report_pdf
+from utils.analysis_report_pdf import build_analysis_thread_report_pdf
 
 
 QUESTION_PRESETS = (
@@ -168,15 +168,28 @@ def _render_conversation(session: dict, analyses: list[dict]) -> None:
 
     for thread in _group_analysis_threads(analyses):
         root = thread[0]
+        root_id = root.get("id") or "conversation"
         follow_up_count = max(0, len(thread) - 1)
         with st.container(border=True):
-            heading, metadata = st.columns([4, 1.4])
+            heading, metadata, report = st.columns([3.4, 1.45, 1.25])
             with heading:
                 st.markdown("#### 辅助决策对话")
             with metadata:
                 st.caption(
                     f"{format_datetime(root.get('created_at'))} · "
                     f"{follow_up_count} 次追问"
+                )
+            with report:
+                st.download_button(
+                    "下载完整 PDF",
+                    data=_analysis_thread_pdf(session, thread),
+                    file_name=(
+                        f"{session.get('subject_code', 'animal')}_"
+                        f"辅助决策对话_{root_id}.pdf"
+                    ),
+                    mime="application/pdf",
+                    key=f"analysis_thread_pdf_{root_id}",
+                    width="stretch",
                 )
 
             for index, analysis in enumerate(thread):
@@ -268,7 +281,7 @@ def _render_analysis_exchange(
 
         analysis_id = analysis.get("id")
         if allow_follow_up and analysis_id is not None:
-            follow_up, report, record = st.columns([1.35, 1, 1])
+            follow_up, record = st.columns([1.35, 1])
             with follow_up:
                 st.button(
                     "围绕此结论追问",
@@ -281,24 +294,15 @@ def _render_analysis_exchange(
                     width="stretch",
                 )
         else:
-            report, record = st.columns(2)
-
-        with report:
-            st.download_button(
-                "下载 PDF 报告",
-                data=_analysis_pdf(session, analysis),
-                file_name=(
-                    f"{session.get('subject_code', 'animal')}_辅助决策_{analysis_id}.pdf"
-                ),
-                mime="application/pdf",
-                key=f"analysis_pdf_{analysis_id}",
-                width="stretch",
-            )
+            _, record = st.columns([1.35, 1])
         with record:
             st.download_button(
-                "下载完整记录",
+                "下载本轮数据",
                 data=json.dumps(analysis, ensure_ascii=False, indent=2, default=str),
-                file_name=f"{session.get('subject_code', 'animal')}_造模评估.json",
+                file_name=(
+                    f"{session.get('subject_code', 'animal')}_"
+                    f"辅助决策_{analysis_id}.json"
+                ),
                 mime="application/json",
                 key=f"analysis_json_{analysis_id}",
                 width="stretch",
@@ -406,8 +410,8 @@ def _submit_follow_up(
 
 
 @st.cache_data(show_spinner=False)
-def _analysis_pdf(session: dict, analysis: dict) -> bytes:
-    return build_analysis_report_pdf(session, analysis)
+def _analysis_thread_pdf(session: dict, analyses: list[dict]) -> bytes:
+    return build_analysis_thread_report_pdf(session, analyses)
 
 
 def _set_question(question: str) -> None:
