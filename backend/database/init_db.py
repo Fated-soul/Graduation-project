@@ -440,6 +440,36 @@ MIGRATION_SQL = [
     "ALTER TABLE session_agent_analyses ADD COLUMN IF NOT EXISTS retrieval_mode VARCHAR(30);",
     "ALTER TABLE session_agent_analyses ADD COLUMN IF NOT EXISTS parent_analysis_id BIGINT;",
     """
+    UPDATE session_agent_analyses
+    SET question = '请结合足底电击、冻结行为和钙活动，评估本次 FC 会话是否支持恐惧记忆形成，并说明结论的局限。'
+    WHERE question = 'Assess whether this FC session supports fear-memory formation by jointly considering foot shocks, freezing behavior, and calcium activity. State the limits of the conclusion.';
+    """,
+    """
+    UPDATE session_agent_analyses AS analysis
+    SET question = CASE session.session_type
+        WHEN 'fear_conditioning' THEN
+            '请结合足底电击、冻结行为和钙活动，评估本次恐惧条件化会话的造模反应，并说明证据局限。'
+        WHEN 'offline_consolidation' THEN
+            '请结合脑电、肌电、睡眠状态和钙活动，评估本次离线巩固会话，并说明与其他会话比较的限制。'
+        WHEN 'recall_assessment' THEN
+            '请结合冻结行为、运动和钙活动，评估本次记忆回忆会话，并说明证据局限。'
+        WHEN 'neutral_exposure' THEN
+            '请结合基线行为、运动和钙活动，评估本次基线适应会话，并说明证据局限。'
+        ELSE
+            '请综合评估本次造模会话的多模态证据，并说明结论的局限。'
+        END
+    FROM experiment_sessions AS session
+    WHERE analysis.session_id = session.id
+      AND (
+          analysis.question IS NULL
+          OR btrim(analysis.question) = ''
+          OR (
+              char_length(analysis.question)
+              - char_length(replace(analysis.question, '?', ''))
+          ) >= GREATEST(3, char_length(analysis.question) / 2)
+      );
+    """,
+    """
     DO $$
     BEGIN
         IF NOT EXISTS (

@@ -19,6 +19,14 @@ QUESTIONS = (
     "不同模态之间是否相互支持？哪些结论仍需人工复核？",
     "根据当前证据，下一阶段应重点观察哪些变化？",
 )
+LEGACY_QUESTION_TRANSLATIONS = {
+    (
+        "Assess whether this FC session supports fear-memory formation by jointly "
+        "considering foot shocks, freezing behavior, and calcium activity. State "
+        "the limits of the conclusion."
+    ): "请结合足底电击、冻结行为和钙活动，评估本次 FC 会话是否支持恐惧记忆形成，并说明结论的局限。",
+}
+DEFAULT_ANALYSIS_QUESTION = "请综合评估本次造模会话的多模态证据，并说明结论的局限。"
 
 
 def render() -> None:
@@ -112,9 +120,11 @@ def render() -> None:
                 f" · 证据充分度 {confidence_text}"
             )
             st.markdown("**评估问题**")
-            st.markdown(f"> {analysis.get('question') or '综合评估本次造模会话'}")
+            st.markdown(f"> {_display_question(analysis.get('question'))}")
             if analysis.get("parent_question"):
-                st.caption(f"承接上一条问题：{analysis['parent_question']}")
+                st.caption(
+                    f"承接上一条问题：{_display_question(analysis['parent_question'])}"
+                )
             st.markdown("**评估结论**")
             st.write(analysis.get("summary") or "")
             evidence = analysis.get("evidence") or []
@@ -205,7 +215,7 @@ def _analysis_markdown(analysis: dict) -> str:
         "# 实验动物多模态智能造模评估报告\n\n"
         f"形成时间：{format_datetime(analysis.get('created_at'))}\n\n"
         f"证据充分度：{confidence_text}\n\n"
-        f"## 评估问题\n\n{analysis.get('question') or '综合评估本次造模会话'}\n\n"
+        f"## 评估问题\n\n{_display_question(analysis.get('question'))}\n\n"
         f"## 评估结论\n\n{analysis.get('summary') or ''}\n\n"
         f"## 判断依据\n\n{evidence}\n\n"
         f"## 后续建议\n\n{analysis.get('recommendation') or '暂无'}\n"
@@ -215,3 +225,16 @@ def _analysis_markdown(analysis: dict) -> str:
 
 def _set_question(question: str) -> None:
     st.session_state.dataset_agent_question = question
+
+
+def _display_question(value: object) -> str:
+    question = str(value or "").strip()
+    if not question:
+        return DEFAULT_ANALYSIS_QUESTION
+    translated = LEGACY_QUESTION_TRANSLATIONS.get(question)
+    if translated:
+        return translated
+    question_mark_count = question.count("?") + question.count("？")
+    if question_mark_count >= max(3, len(question) // 2):
+        return DEFAULT_ANALYSIS_QUESTION
+    return question

@@ -8,7 +8,7 @@ FRONTEND_DIR = Path(__file__).resolve().parents[1]
 if str(FRONTEND_DIR) not in sys.path:
     sys.path.insert(0, str(FRONTEND_DIR))
 
-from pages import sessions
+from pages import dataset_agent, sessions
 
 
 class _SessionState(dict):
@@ -38,3 +38,14 @@ def test_open_review_carries_the_selected_subject_and_session(monkeypatch) -> No
     assert stub.session_state["review_primary_session"] == 63
     assert stub.session_state["current_page"] == "多模态复核"
     assert stub.rerun_called is True
+
+
+def test_legacy_agent_questions_are_presented_in_readable_chinese() -> None:
+    english = (
+        "Assess whether this FC session supports fear-memory formation by jointly "
+        "considering foot shocks, freezing behavior, and calcium activity. State "
+        "the limits of the conclusion."
+    )
+
+    assert "足底电击" in dataset_agent._display_question(english)
+    assert "多模态证据" in dataset_agent._display_question("????????????????????")
