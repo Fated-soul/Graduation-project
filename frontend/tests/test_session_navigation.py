@@ -49,3 +49,16 @@ def test_legacy_agent_questions_are_presented_in_readable_chinese() -> None:
 
     assert "足底电击" in dataset_agent._display_question(english)
     assert "多模态证据" in dataset_agent._display_question("????????????????????")
+
+
+def test_agent_followups_stay_with_their_original_conversation() -> None:
+    analyses = [
+        {"id": 4, "parent_analysis_id": 2, "created_at": "2026-10-19T10:04:00"},
+        {"id": 3, "parent_analysis_id": None, "created_at": "2026-10-19T10:03:00"},
+        {"id": 2, "parent_analysis_id": 1, "created_at": "2026-10-19T10:02:00"},
+        {"id": 1, "parent_analysis_id": None, "created_at": "2026-10-19T10:01:00"},
+    ]
+
+    threads = dataset_agent._group_analysis_threads(analyses)
+
+    assert [[item["id"] for item in thread] for thread in threads] == [[1, 2, 4], [3]]

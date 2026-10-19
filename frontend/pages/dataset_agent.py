@@ -157,7 +157,7 @@ def _render_composer(session_id: int) -> None:
 def _render_conversation(session: dict, analyses: list[dict]) -> None:
     render_section_title(
         "决策对话",
-        "问题、结论、判断依据和后续追问按照形成时间连续保留",
+        "每次初始分析及其后续追问作为一条完整对话连续保留",
     )
     if not analyses:
         with st.container(border=True):
@@ -165,11 +165,69 @@ def _render_conversation(session: dict, analyses: list[dict]) -> None:
             st.write("可从上方选择一个关注方向，或直接输入与本次造模相关的问题。")
         return
 
-    for analysis in reversed(analyses):
-        _render_analysis_exchange(session, analysis)
+    for thread in _group_analysis_threads(analyses):
+        root = thread[0]
+        follow_up_count = max(0, len(thread) - 1)
+        with st.container(border=True):
+            heading, metadata = st.columns([4, 1.4])
+            with heading:
+                st.markdown("#### 辅助决策对话")
+            with metadata:
+                st.caption(
+                    f"{format_datetime(root.get('created_at'))} · "
+                    f"{follow_up_count} 次追问"
+                )
+
+            for index, analysis in enumerate(thread):
+                if index:
+                    st.divider()
+                _render_analysis_exchange(
+                    session,
+                    analysis,
+                    allow_follow_up=index == len(thread) - 1,
+                )
 
 
-def _render_analysis_exchange(session: dict, analysis: dict) -> None:
+def _group_analysis_threads(analyses: list[dict]) -> list[list[dict]]:
+    ordered = sorted(
+        analyses,
+        key=lambda item: (
+            str(item.get("created_at") or ""),
+            int(item.get("id") or 0),
+        ),
+    )
+    records_by_id = {
+        int(item["id"]): item for item in ordered if item.get("id") is not None
+    }
+    threads: dict[int | str, list[dict]] = {}
+
+    for index, analysis in enumerate(ordered):
+        root = analysis
+        visited: set[int] = set()
+        parent_id = root.get("parent_analysis_id")
+        while parent_id is not None and int(parent_id) in records_by_id:
+            numeric_parent_id = int(parent_id)
+            if numeric_parent_id in visited:
+                break
+            visited.add(numeric_parent_id)
+            root = records_by_id[numeric_parent_id]
+            parent_id = root.get("parent_analysis_id")
+
+        root_id = root.get("id")
+        thread_key: int | str = (
+            int(root_id) if root_id is not None else f"record-{index}"
+        )
+        threads.setdefault(thread_key, []).append(analysis)
+
+    return list(threads.values())
+
+
+def _render_analysis_exchange(
+    session: dict,
+    analysis: dict,
+    *,
+    allow_follow_up: bool,
+) -> None:
     is_follow_up = bool(analysis.get("parent_analysis_id"))
     with st.chat_message("user", avatar=":material/science:"):
         st.caption("实验人员追问" if is_follow_up else "实验人员提问")
@@ -208,9 +266,9 @@ def _render_analysis_exchange(session: dict, analysis: dict) -> None:
             _render_evidence_and_sources(evidence, sources)
 
         analysis_id = analysis.get("id")
-        follow_up, report, record = st.columns([1.35, 1, 1])
-        with follow_up:
-            if analysis_id is not None:
+        if allow_follow_up and analysis_id is not None:
+            follow_up, report, record = st.columns([1.35, 1, 1])
+            with follow_up:
                 st.button(
                     "围绕此结论追问",
                     key=f"start_follow_up_{analysis_id}",
@@ -221,6 +279,9 @@ def _render_analysis_exchange(session: dict, analysis: dict) -> None:
                     ),
                     width="stretch",
                 )
+        else:
+            report, record = st.columns(2)
+
         with report:
             st.download_button(
                 "下载评估报告",
@@ -242,7 +303,8 @@ def _render_analysis_exchange(session: dict, analysis: dict) -> None:
 
         target = st.session_state.get("dataset_agent_follow_up_target")
         if (
-            analysis_id is not None
+            allow_follow_up
+            and analysis_id is not None
             and target
             and int(target.get("analysis_id") or -1) == int(analysis_id)
         ):
@@ -301,7 +363,7 @@ def _render_evidence_and_sources(evidence: list, sources: list) -> None:
             label = f"{title} · {section}" if section else title
             url = str(source.get("source_url") or "").strip()
             if url.startswith(("https://", "http://")):
-                st.markdown(f"- [{label}]({url})")
+                st.link_button(label, url, width="content")
             else:
                 st.markdown(f"- {label}")
     else:
