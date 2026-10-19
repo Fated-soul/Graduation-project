@@ -12,7 +12,7 @@ def test_builtin_knowledge_documents_are_loaded() -> None:
     chunks = load_knowledge_chunks()
     status = get_rag_status()
 
-    assert status["document_count"] >= 4
+    assert status["document_count"] >= 11
     assert status["chunk_count"] == len(chunks)
     assert any(item.title == "DANDI 000718 官方数据说明" for item in chunks)
     assert all(item.source_url.startswith("https://") for item in chunks)
@@ -45,3 +45,31 @@ def test_retrieved_context_uses_stable_citation_numbers() -> None:
 
     assert "[资料1]" in context
     assert "来源：https://" in context
+
+
+def test_keyword_retrieval_covers_sleep_and_alignment_guidance() -> None:
+    sleep_result = retrieve_knowledge(
+        "EEG 和 EMG 怎样区分 REM、NREM 和清醒状态？",
+        top_k=4,
+        use_embeddings=False,
+    )
+    sleep_text = " ".join(
+        f"{item['title']} {item['section']} {item['excerpt']}"
+        for item in sleep_result["sources"]
+    )
+    assert "睡眠" in sleep_text
+    assert "EEG" in sleep_text
+    assert "EMG" in sleep_text
+
+    alignment_result = retrieve_knowledge(
+        "不同 NWB 会话怎样按真实采集时间对齐，缺失区间怎么办？",
+        top_k=4,
+        use_embeddings=False,
+    )
+    alignment_text = " ".join(
+        f"{item['title']} {item['section']} {item['excerpt']}"
+        for item in alignment_result["sources"]
+    )
+    assert "NWB" in alignment_text
+    assert "时间" in alignment_text
+    assert "缺失" in alignment_text
