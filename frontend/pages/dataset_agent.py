@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from html import escape
 import json
 
 import streamlit as st
@@ -215,18 +216,36 @@ def _render_conversation(session: dict, analyses: list[dict]) -> None:
             st.write("可从上方选择一个关注方向，或直接输入与本次造模相关的问题。")
         return
 
-    for thread in _group_analysis_threads(analyses):
+    for thread_number, thread in enumerate(_group_analysis_threads(analyses), start=1):
         root = thread[0]
         root_id = root.get("id") or "conversation"
         follow_up_count = max(0, len(thread) - 1)
-        with st.container(border=True):
-            heading, metadata, report = st.columns([3.4, 1.45, 1.25])
+        latest = thread[-1]
+        latest_confidence = latest.get("confidence")
+        confidence_text = (
+            f"{_normalise_confidence(latest_confidence):.0%}"
+            if latest_confidence is not None
+            else "未评定"
+        )
+        with st.container(border=True, key=f"decision_thread_{root_id}"):
+            heading, report = st.columns([5, 1.25], vertical_alignment="center")
             with heading:
-                st.markdown("#### 辅助决策对话")
-            with metadata:
-                st.caption(
-                    f"{format_datetime(root.get('created_at'))} · "
-                    f"{follow_up_count} 次追问"
+                st.markdown(
+                    f"""
+                    <div class="decision-thread-header">
+                        <div class="decision-thread-index">{thread_number:02d}</div>
+                        <div class="decision-thread-heading">
+                            <strong>辅助决策对话</strong>
+                            <span>始于 {escape(format_datetime(root.get('created_at')))}</span>
+                        </div>
+                        <div class="decision-thread-tags">
+                            <span>{len(thread)} 轮对话</span>
+                            <span>{follow_up_count} 次追问</span>
+                            <span>最新充分度 {confidence_text}</span>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
                 )
             with report:
                 st.download_button(
@@ -238,17 +257,29 @@ def _render_conversation(session: dict, analyses: list[dict]) -> None:
                     ),
                     mime="application/pdf",
                     key=f"analysis_thread_pdf_{root_id}",
+                    icon=":material/picture_as_pdf:",
                     width="stretch",
                 )
 
             for index, analysis in enumerate(thread):
-                if index:
-                    st.divider()
-                _render_analysis_exchange(
-                    session,
-                    analysis,
-                    allow_follow_up=index == len(thread) - 1,
-                )
+                analysis_id = analysis.get("id") or f"{root_id}_{index}"
+                turn_name = "初始分析" if index == 0 else f"第 {index} 次追问"
+                with st.container(key=f"decision_exchange_{analysis_id}"):
+                    st.markdown(
+                        f"""
+                        <div class="decision-turn-heading">
+                            <span class="decision-turn-number">{index + 1}</span>
+                            <strong>{turn_name}</strong>
+                            <span>{escape(format_datetime(analysis.get('created_at')))}</span>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                    _render_analysis_exchange(
+                        session,
+                        analysis,
+                        allow_follow_up=index == len(thread) - 1,
+                    )
 
 
 def _group_analysis_threads(analyses: list[dict]) -> list[list[dict]]:
@@ -293,11 +324,24 @@ def _render_analysis_exchange(
 ) -> None:
     is_follow_up = bool(analysis.get("parent_analysis_id"))
     with st.chat_message("user", avatar=":material/science:"):
-        st.caption("实验人员追问" if is_follow_up else "实验人员提问")
-        st.markdown(_display_question(analysis.get("question")))
+        question_label = "实验人员追问" if is_follow_up else "实验人员提问"
+        question_text = escape(_display_question(analysis.get("question"))).replace(
+            "\n", "<br>"
+        )
+        st.markdown(
+            f"""
+            <div class="decision-question-label">{question_label}</div>
+            <div class="decision-question-text">{question_text}</div>
+            """,
+            unsafe_allow_html=True,
+        )
         if analysis.get("parent_question"):
-            st.caption(
-                f"承接问题：{_truncate(_display_question(analysis['parent_question']), 80)}"
+            parent_question = escape(
+                _truncate(_display_question(analysis["parent_question"]), 80)
+            )
+            st.markdown(
+                f'<div class="decision-parent-question">承接上一轮：{parent_question}</div>',
+                unsafe_allow_html=True,
             )
 
     with st.chat_message("assistant", avatar=":material/neurology:"):
@@ -308,18 +352,46 @@ def _render_analysis_exchange(
             else "未评定"
         )
         response_name = "追问答复" if is_follow_up else "Agent 辅助结论"
-        st.markdown(f"**{response_name}**")
-        st.caption(
-            f"形成于 {format_datetime(analysis.get('created_at'))} · "
-            f"证据充分度 {confidence_text}"
+        st.markdown(
+            f"""
+            <div class="decision-response-header">
+                <div>
+                    <strong>{response_name}</strong>
+                    <span>基于当前会话多模态证据与知识库资料形成</span>
+                </div>
+                <div class="decision-confidence">证据充分度&nbsp; {confidence_text}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
         if confidence is not None:
             st.progress(_normalise_confidence(confidence))
 
-        st.write(analysis.get("summary") or "本次分析未返回可显示的结论。")
+        summary = escape(
+            str(analysis.get("summary") or "本次分析未返回可显示的结论。")
+        ).replace("\n", "<br>")
+        st.markdown(
+            f"""
+            <div class="decision-summary">
+                <span>综合结论</span>
+                <p>{summary}</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         if analysis.get("recommendation"):
-            st.markdown("**后续建议**")
-            st.info(str(analysis["recommendation"]))
+            recommendation = escape(str(analysis["recommendation"])).replace(
+                "\n", "<br>"
+            )
+            st.markdown(
+                f"""
+                <div class="decision-recommendation">
+                    <div class="decision-recommendation-mark">议</div>
+                    <div><strong>后续建议</strong><p>{recommendation}</p></div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
         evidence = analysis.get("evidence") or []
         sources = analysis.get("knowledge_sources") or []
@@ -369,9 +441,16 @@ def _render_analysis_exchange(
 
 def _render_inline_follow_up(session_id: int, analysis_id: int) -> None:
     input_key = f"dataset_follow_up_input_{analysis_id}"
-    with st.container(border=True):
-        st.markdown("**继续追问这条结论**")
-        st.caption("Agent 会结合原问题、原结论和当前会话证据继续回答。")
+    with st.container(border=True, key=f"decision_follow_up_{analysis_id}"):
+        st.markdown(
+            """
+            <div class="decision-follow-up-heading">
+                <strong>继续追问这条结论</strong>
+                <span>Agent 将结合完整问题链和当前会话证据继续回答</span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         follow_up = st.text_area(
             "追问内容",
             key=input_key,
