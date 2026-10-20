@@ -96,8 +96,9 @@ Offline 导入器直接读取 NWB 中的 `EEGSignal`、`EMGSignal`、`ActivitySi
 
 Agent 采用“结构化实验数据 + 检索增强生成”的组合方式。当前实验动物、会话、事件和多模态信号由
 FastAPI 从 PostgreSQL 读取；DANDI 官方说明、原始论文、数据解释规则和决策边界等知识文档存放在
-`agent/knowledge`。分析前先使用百炼 `text-embedding-v4` 检索相关知识片段，再将片段与当前会话证据
-共同提交给生成模型。若向量服务不可用，系统会自动退回本地关键词检索，不影响基础分析流程。
+`agent/knowledge`。分析前先使用百炼 `text-embedding-v4` 与关键词混合召回候选片段，再由
+`qwen3-rerank` 二次排序，最后将最相关片段与当前会话证据共同提交给生成模型。若向量或重排
+服务不可用，系统会自动退回关键词检索或初排结果，不影响基础分析流程。
 
 每次分析使用的资料会写入 `session_agent_analyses.knowledge_sources`，检索方式写入
 `session_agent_analyses.retrieval_mode`。前端据此展示可点击的参考资料。检索资料仅用于解释研究背景和

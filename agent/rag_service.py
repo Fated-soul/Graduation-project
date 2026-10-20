@@ -8,6 +8,8 @@ from pathlib import Path
 import re
 from threading import RLock
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from openai import OpenAI
 
@@ -31,6 +33,14 @@ class KnowledgeChunk:
     content: str
 
 
+@dataclass(frozen=True)
+class RankedChunk:
+    chunk: KnowledgeChunk
+    retrieval_score: float
+    lexical_score: float
+    rerank_score: float | None = None
+
+
 def get_rag_status() -> dict[str, Any]:
     chunks = load_knowledge_chunks()
     documents = {item.title for item in chunks}
@@ -44,6 +54,13 @@ def get_rag_status() -> dict[str, Any]:
             and config.DASHSCOPE_API_KEY
         ),
         "embedding_model": config.RAG_EMBEDDING_MODEL,
+        "reranking_available": bool(
+            config.RAG_ENABLED
+            and config.RAG_USE_RERANKER
+            and config.DASHSCOPE_API_KEY
+        ),
+        "rerank_model": config.RAG_RERANK_MODEL,
+        "rerank_candidates": config.RAG_RERANK_CANDIDATES,
         "fallback": "keyword",
     }
 
@@ -53,6 +70,7 @@ def retrieve_knowledge(
     *,
     top_k: int | None = None,
     use_embeddings: bool | None = None,
+    use_reranker: bool | None = None,
 ) -> dict[str, Any]:
     if not config.RAG_ENABLED or not query.strip():
         return {"mode": "disabled", "sources": []}
@@ -70,7 +88,7 @@ def retrieve_knowledge(
     if semantic_requested and config.DASHSCOPE_API_KEY:
         semantic_scores = _semantic_scores(query, chunks)
 
-    ranked: list[tuple[float, float, KnowledgeChunk]] = []
+    ranked: list[RankedChunk] = []
     for index, chunk in enumerate(chunks):
         lexical = lexical_scores[index]
         if semantic_scores is None:
@@ -78,36 +96,168 @@ def retrieve_knowledge(
         else:
             semantic = max(0.0, semantic_scores[index])
             score = semantic * 0.85 + lexical * 0.15
-        ranked.append((score, lexical, chunk))
-    ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        ranked.append(
+            RankedChunk(
+                chunk=chunk,
+                retrieval_score=score,
+                lexical_score=lexical,
+            )
+        )
+    ranked.sort(
+        key=lambda item: (item.retrieval_score, item.lexical_score),
+        reverse=True,
+    )
+
+    candidate_limit = max(selected_top_k, config.RAG_RERANK_CANDIDATES)
+    candidates = _select_candidates(ranked, candidate_limit)
+    rerank_requested = (
+        config.RAG_USE_RERANKER if use_reranker is None else use_reranker
+    )
+    rerank_applied = False
+    if rerank_requested and config.DASHSCOPE_API_KEY and len(candidates) > 1:
+        reranked = _rerank_candidates(query, candidates)
+        if reranked is not None:
+            candidates = reranked
+            rerank_applied = True
 
     sources: list[dict[str, Any]] = []
     seen_documents: set[str] = set()
-    for score, lexical, chunk in ranked:
-        if score < config.RAG_MIN_SCORE:
-            continue
+    for candidate in candidates:
+        chunk = candidate.chunk
         document_key = chunk.title
         if document_key in seen_documents:
             continue
         seen_documents.add(document_key)
-        sources.append(
-            {
-                "chunk_id": chunk.chunk_id,
-                "title": chunk.title,
-                "section": chunk.section,
-                "source_url": chunk.source_url,
-                "source_type": chunk.source_type,
-                "score": round(score, 4),
-                "excerpt": _excerpt(chunk.content),
-            }
-        )
+        source = {
+            "chunk_id": chunk.chunk_id,
+            "title": chunk.title,
+            "section": chunk.section,
+            "source_url": chunk.source_url,
+            "source_type": chunk.source_type,
+            "score": round(
+                candidate.rerank_score
+                if candidate.rerank_score is not None
+                else candidate.retrieval_score,
+                4,
+            ),
+            "retrieval_score": round(candidate.retrieval_score, 4),
+            "excerpt": _excerpt(chunk.content),
+        }
+        if candidate.rerank_score is not None:
+            source["rerank_score"] = round(candidate.rerank_score, 4)
+        sources.append(source)
         if len(sources) >= selected_top_k:
             break
 
+    base_mode = "semantic_keyword" if semantic_scores is not None else "keyword"
     return {
-        "mode": "semantic_keyword" if semantic_scores is not None else "keyword",
+        "mode": f"{base_mode}_rerank" if rerank_applied else base_mode,
+        "rerank_applied": rerank_applied,
+        "candidate_count": len(candidates),
         "sources": sources,
     }
+
+
+def _select_candidates(
+    ranked: list[RankedChunk],
+    limit: int,
+    *,
+    per_document: int = 2,
+) -> list[RankedChunk]:
+    selected: list[RankedChunk] = []
+    document_counts: dict[str, int] = {}
+    for candidate in ranked:
+        if candidate.retrieval_score < config.RAG_MIN_SCORE:
+            continue
+        title = candidate.chunk.title
+        if document_counts.get(title, 0) >= per_document:
+            continue
+        selected.append(candidate)
+        document_counts[title] = document_counts.get(title, 0) + 1
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def _rerank_candidates(
+    query: str,
+    candidates: list[RankedChunk],
+) -> list[RankedChunk] | None:
+    documents = [
+        f"{item.chunk.title}\n{item.chunk.section}\n{item.chunk.content}"
+        for item in candidates
+    ]
+    try:
+        results = _request_rerank(query, documents)
+    except (OSError, RuntimeError, ValueError, json.JSONDecodeError):
+        return None
+
+    scores: dict[int, float] = {}
+    for result in results:
+        index = result.get("index")
+        score = result.get("relevance_score")
+        if (
+            isinstance(index, int)
+            and 0 <= index < len(candidates)
+            and isinstance(score, (int, float))
+            and math.isfinite(float(score))
+        ):
+            scores[index] = float(score)
+    if not scores:
+        return None
+
+    reranked = [
+        RankedChunk(
+            chunk=candidate.chunk,
+            retrieval_score=candidate.retrieval_score,
+            lexical_score=candidate.lexical_score,
+            rerank_score=scores.get(index, -1.0),
+        )
+        for index, candidate in enumerate(candidates)
+    ]
+    reranked.sort(
+        key=lambda item: (
+            item.rerank_score if item.rerank_score is not None else -1.0,
+            item.retrieval_score,
+        ),
+        reverse=True,
+    )
+    return reranked
+
+
+def _request_rerank(query: str, documents: list[str]) -> list[dict[str, Any]]:
+    payload = {
+        "model": config.RAG_RERANK_MODEL,
+        "input": {"query": query, "documents": documents},
+        "parameters": {
+            "top_n": len(documents),
+            "return_documents": False,
+            "instruct": config.RAG_RERANK_INSTRUCT,
+        },
+    }
+    request = Request(
+        config.RAG_RERANK_URL,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {config.DASHSCOPE_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=config.RAG_RERANK_TIMEOUT_SECONDS) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        raise RuntimeError(f"rerank request failed with HTTP {exc.code}") from exc
+    except URLError as exc:
+        raise RuntimeError("rerank service is unavailable") from exc
+
+    if data.get("code"):
+        raise RuntimeError(f"rerank request failed: {data['code']}")
+    results = data.get("output", {}).get("results")
+    if not isinstance(results, list):
+        raise ValueError("rerank response does not contain results")
+    return [item for item in results if isinstance(item, dict)]
 
 
 def format_retrieved_context(retrieval: dict[str, Any]) -> str:

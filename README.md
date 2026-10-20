@@ -18,7 +18,7 @@
 - FastAPI、Pydantic
 - PostgreSQL、psycopg2
 - 阿里云百炼 `deepseek-v4.1-flash`
-- 百炼 `text-embedding-v4` 向量检索
+- 百炼 `text-embedding-v4` 混合召回与 `qwen3-rerank` 二次排序
 
 ## 新电脑首次部署
 
@@ -109,10 +109,17 @@ MINGCHA_BACKEND_API_URL=http://127.0.0.1:8000
 RAG_ENABLED=true
 RAG_USE_EMBEDDINGS=true
 RAG_EMBEDDING_MODEL=text-embedding-v4
+RAG_USE_RERANKER=true
+RAG_RERANK_MODEL=qwen3-rerank
+RAG_RERANK_CANDIDATES=16
 ```
 
 `agent/.env` 已被 Git 忽略，不会被提交到仓库。没有 API 密钥时仍可浏览和复核已导入的数据，
 但无法使用百炼模型生成完整的 Agent 分析结果。
+
+向量召回或重排接口临时不可用时，系统会依次降级为关键词检索和初排结果，不会阻断已有
+研究数据的浏览与复核。若使用百炼业务空间专属域名，可在 `agent/.env` 额外设置
+`RAG_RERANK_URL`。
 
 ### 5. 启动三个服务
 

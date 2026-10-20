@@ -71,10 +71,13 @@ $env:DASHSCOPE_API_KEY="你的百炼 API Key"
 $env:DASHSCOPE_MODEL="deepseek-v4.1-flash"
 $env:RAG_ENABLED="true"
 $env:RAG_EMBEDDING_MODEL="text-embedding-v4"
+$env:RAG_USE_RERANKER="true"
+$env:RAG_RERANK_MODEL="qwen3-rerank"
 ```
 
 Agent 会将 PostgreSQL 中的实验事实与 `agent/knowledge/` 中的数据集说明、原始论文和复核
-规范结合。首次检索会建立向量缓存，后续直接复用；前端的决策记录会显示本次实际引用的
+规范结合。首次检索会建立向量缓存，后续先混合召回候选资料，再通过重排序模型筛选；前端
+的决策记录会显示本次实际引用的
 研究资料。若未配置 API Key，系统仍可使用后端基于会话证据生成的基础评估，不会影响
 数据同步和复核。
 
