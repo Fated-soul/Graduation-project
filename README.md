@@ -166,10 +166,37 @@ Git 仓库不保存体积较大的公开数据副本。三个服务正常启动�
 会话或播放视频时需要访问 DANDI，通常需要几十秒到数分钟。下载及转码结果会缓存在
 `backend/cache/`，后续访问会明显加快。
 
-## 日常启动
+## Windows 桌面版
 
-首次部署完成后，无需重复安装依赖、创建数据库和同步研究目录。启动 PostgreSQL 后，在项目
-根目录分别运行以下三个命令即可：
+项目提供可双击运行的 Windows 桌面壳。桌面程序会自动启动后端、Agent 和 Streamlit，随后
+在独立窗口中显示研究平台；关闭主窗口后会清理它创建的后台服务。
+
+已构建程序位于：
+
+```text
+desktop/dist/MingChaShuHao/MingChaShuHao.exe
+```
+
+需要复制到其他 Windows 电脑时，使用便携包
+`desktop/dist/MingChaShuHao-Portable-3.0.0.zip`，完整解压后再双击程序。
+
+在当前电脑执行 `powershell -ExecutionPolicy Bypass -File desktop/install.ps1`，会将桌面版安装
+到当前用户的软件目录、导入 `agent/.env`，并创建“明察鼠毫”桌面和开始菜单快捷方式。
+
+在新电脑重新构建：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File desktop/build.ps1
+```
+
+首次运行会创建 `%LOCALAPPDATA%\MingChaShuHao\config\.env`。填写 PostgreSQL 密码和
+`DASHSCOPE_API_KEY` 后，日常使用只需启动 PostgreSQL 并双击桌面程序。详细说明见
+[`desktop/README.md`](desktop/README.md)。
+
+## 日常手动启动
+
+不使用桌面壳时，首次部署完成后也无需重复安装依赖、创建数据库和同步研究目录。启动
+PostgreSQL 后，在项目根目录分别运行以下三个命令即可：
 
 ```powershell
 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000

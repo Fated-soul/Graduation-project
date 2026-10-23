@@ -24,7 +24,19 @@ python -m pip install -r frontend/requirements.txt
 python -m backend.database.init_db
 ```
 
-## 二、启动顺序
+## 二、桌面版启动
+
+完成首次数据库和 Agent 配置后，可直接双击：
+
+```text
+desktop/dist/MingChaShuHao/MingChaShuHao.exe
+```
+
+桌面程序会自动管理后端、Agent 和前端，不显示浏览器地址栏，也不需要打开三个命令行窗口。
+首次运行的配置文件和运行日志位于 `%LOCALAPPDATA%\MingChaShuHao`。构建与故障处理见
+`desktop/README.md`。
+
+## 三、手动启动顺序
 
 打开三个 PowerShell 窗口，并都进入项目根目录。
 
@@ -48,7 +60,7 @@ python -m streamlit run frontend/app.py --server.port 8501
 
 浏览器访问：`http://127.0.0.1:8501`
 
-## 三、首次建立研究数据
+## 四、首次建立研究数据
 
 1. 打开左侧“数据来源”。
 2. 点击“同步 DANDI 000718 研究目录”。
@@ -62,7 +74,7 @@ python -m streamlit run frontend/app.py --server.port 8501
 建议先载入 `Ca-EEG3-4 · 恐惧条件化造模`，该会话同时包含足底电击、冻结行为、
 行为视频、钙活动和运动强度，便于检查完整工作流。
 
-## 四、百炼 Agent 配置
+## 五、百炼 Agent 配置
 
 模型默认为 `deepseek-v4.1-flash`。在启动 Agent 服务的 PowerShell 窗口中设置：
 
@@ -81,7 +93,7 @@ Agent 会将 PostgreSQL 中的实验事实与 `agent/knowledge/` 中的数据集
 研究资料。若未配置 API Key，系统仍可使用后端基于会话证据生成的基础评估，不会影响
 数据同步和复核。
 
-## 五、页面职责
+## 六、页面职责
 
 - “造模总览”：查看阶段分布、模态覆盖和会话状态。
 - “实验动物”：查看同一动物跨阶段的纵向造模轨迹。
@@ -91,7 +103,7 @@ Agent 会将 PostgreSQL 中的实验事实与 `agent/knowledge/` 中的数据集
 - “数据来源”：管理 DANDI 000718 固定版本及官方来源。
 - “研究数据”：查看数据规模、模态覆盖和研究留痕。
 
-## 六、常见问题
+## 七、常见问题
 
 后端端口被占用时，可先执行：
 
@@ -107,7 +119,7 @@ MP4，缓存位于 `backend/cache/videos`；首次播放可能需要一至数分
 
 官方教程：<https://docs.dandiarchive.org/example-notebooks/000718/CaiLab/zaki_2024/000718_demo/>
 
-## 七、纵向多模态复核
+## 八、纵向多模态复核
 
 进入“多模态复核”后：
 

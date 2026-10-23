@@ -79,7 +79,12 @@ RAG_RERANK_INSTRUCT = os.getenv(
     "Given a research question, retrieve passages that provide evidence for answering it.",
 ).strip()
 RAG_KNOWLEDGE_DIR = Path(__file__).resolve().parent / "knowledge"
-RAG_CACHE_PATH = Path(__file__).resolve().parent / "cache" / "knowledge_index.json"
+RAG_CACHE_PATH = Path(
+    os.getenv(
+        "MINGCHA_RAG_CACHE_PATH",
+        str(Path(__file__).resolve().parent / "cache" / "knowledge_index.json"),
+    )
+)
 
 
 def validate_settings() -> list[str]:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import datetime, timedelta
+import os
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,10 @@ class NWBImportError(RuntimeError):
     pass
 
 
-NWB_CACHE_DIR = Path(__file__).resolve().parents[1] / "cache" / "nwb"
+_DEFAULT_CACHE_ROOT = Path(__file__).resolve().parents[1] / "cache"
+NWB_CACHE_DIR = Path(
+    os.getenv("MINGCHA_BACKEND_CACHE_DIR", str(_DEFAULT_CACHE_ROOT))
+) / "nwb"
 
 
 def import_session_content(

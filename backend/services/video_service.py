@@ -14,7 +14,10 @@ import imageio_ffmpeg
 from backend.repositories import public_data_repository
 
 
-VIDEO_CACHE_DIR = Path(__file__).resolve().parents[1] / "cache" / "videos"
+_DEFAULT_CACHE_ROOT = Path(__file__).resolve().parents[1] / "cache"
+VIDEO_CACHE_DIR = Path(
+    os.getenv("MINGCHA_BACKEND_CACHE_DIR", str(_DEFAULT_CACHE_ROOT))
+) / "videos"
 _LOCKS: dict[int, Lock] = {}
 _LOCKS_GUARD = Lock()
 

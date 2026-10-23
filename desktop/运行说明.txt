@@ -1,0 +1,22 @@
+明察鼠毫 Windows 桌面版
+
+1. 启动 PostgreSQL，并确认已创建 IOT 数据库。
+2. 双击 MingChaShuHao.exe。
+3. 程序会自动启动研究数据服务、Agent 服务和桌面工作台。
+4. 关闭主窗口后，由本程序启动的后台服务会自动退出。
+
+首次运行会创建配置文件：
+%LOCALAPPDATA%\MingChaShuHao\config\.env
+
+请在该文件中填写 PostgreSQL 密码和 DASHSCOPE_API_KEY。未配置百炼密钥时，
+数据浏览与复核仍可使用，但完整的 Agent 生成、向量检索和重排序不可用。
+
+缓存目录：%LOCALAPPDATA%\MingChaShuHao\cache
+日志目录：%LOCALAPPDATA%\MingChaShuHao\logs
+
+固定端口：
+- 后端 8000
+- Agent 8001
+- 桌面工作台 8501
+
+若启动失败，程序会显示中文原因，并提供配置文件和日志目录入口。

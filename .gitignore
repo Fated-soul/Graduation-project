@@ -14,6 +14,8 @@
 !/backend/**
 !/frontend/
 !/frontend/**
+!/desktop/
+!/desktop/**
 
 # Never publish credentials, local environments or generated files.
 **/.env
@@ -24,6 +26,11 @@
 **/venv/
 agent/cache/
 backend/cache/
+desktop/build/
+desktop/dist/
+desktop/.venv/
+desktop/.pip-cache/
+desktop/assets/*.ico
 *.log
 *.tmp
 .DS_Store
