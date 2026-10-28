@@ -337,7 +337,44 @@ def build_session_analysis(
         f"钙成像 ROI 指标 {len(roi_metrics)} 个，人工复核 {len(annotations)} 条",
     ]
     session_type = str(session.get("session_type") or "")
+    stage_descriptions = {
+        "neutral_exposure": (
+            "本次为基线适应会话。",
+            "优先复核基线阶段的冻结行为、运动与钙活动，为后续造模和回忆评估提供参照；"
+            "不要把基线观察直接解释为刺激后的造模效果。",
+        ),
+        "fear_conditioning": (
+            "本次为恐惧条件化（FC）会话。",
+            "在已记录足底电击的前提下，复核刺激前后冻结行为、运动与钙活动的变化；"
+            "缺少电击记录时先核对原始数据，不推定刺激发生时间。",
+        ),
+        "recall_assessment": (
+            "本次为记忆回忆评估会话。",
+            "优先复核回忆阶段的冻结行为与钙活动，并与同一动物的基线及造模会话进行会话级比较；"
+            "不把回忆阶段直接当成电击条件化阶段。",
+        ),
+        "offline_consolidation": (
+            "本次为离线巩固会话。",
+            "按本次会话实际包含的睡眠或清醒标签、脑电、肌电和钙活动开展复核；"
+            "与 FC 比较时保留真实采集时刻与间隔，不将非同期的相同相对秒数直接对应。",
+        ),
+        "longitudinal_followup": (
+            "本次为跨周随访会话。",
+            "按实际可用模态检查跨周变化及记录完整性，保持真实采集时间；"
+            "不将随访默认解释为 FC 刺激或完整睡眠记录。",
+        ),
+    }
+    stage_intro, recommendation = stage_descriptions.get(
+        session_type,
+        ("本次为其他研究阶段会话。", "先核对研究阶段和实际证据覆盖，再进行会话内复核或会话级比较。"),
+    )
     if events or signals:
+        shock_count = sum(item.get("event_type") == "electric_shock" for item in events)
+        freezing_seconds = sum(
+            max(0.0, float(item.get("stop_time_seconds") or 0) - float(item.get("start_time_seconds") or 0))
+            for item in events if item.get("event_type") == "freezing"
+        )
+        evidence.append(f"记录足底电击 {shock_count} 次，冻结行为累计 {freezing_seconds:.1f} 秒")
         if session_type == "offline_consolidation":
             sleep_events = [item for item in events if item.get("event_type") == "sleep_state"]
             sleep_seconds = sum(
@@ -349,38 +386,24 @@ def build_session_analysis(
                 for item in sleep_events
             )
             evidence.append(f"睡眠与清醒状态共 {len(sleep_events)} 段，累计覆盖 {sleep_seconds / 60:.1f} 分钟")
-            summary = (
-                "本次为离线巩固会话，脑电、肌电、睡眠状态与钙活动均按该会话真实开始时间记录，"
-                "可用于观察不同睡眠或清醒状态下的神经活动变化。"
-            )
-            recommendation = (
-                "优先在本次 Offline 会话内部复核睡眠状态、脑电、肌电和钙活动的同步变化；"
-                "与 FC 会话比较时仅按真实采集时间判断先后与间隔，不把两场会话内的相同秒数直接对应。"
-            )
-        else:
-            shock_count = sum(item.get("event_type") == "electric_shock" for item in events)
-            freezing_seconds = sum(
-                max(
-                    0.0,
-                    float(item.get("stop_time_seconds") or 0)
-                    - float(item.get("start_time_seconds") or 0),
-                )
-                for item in events
-                if item.get("event_type") == "freezing"
-            )
-            evidence.append(f"记录足底电击 {shock_count} 次，冻结行为累计 {freezing_seconds:.1f} 秒")
-            summary = (
-                "本次为 FC 会话，足底电击、冻结行为、行为视频和钙活动共享同一会话时间基准，"
-                "可用于复核刺激前后行为与神经活动的同步变化。"
-            )
-            recommendation = (
-                "优先复核每次电击前后冻结行为、运动与钙活动的变化；跨会话解释应结合后续 Offline"
-                " 会话的真实开始时间和时间间隔。"
-            )
-        confidence = 0.86
+        coverage = [event_labels.get(item, item) for item in sorted(event_types)]
+        coverage += [modality_labels.get(item, item) for item in sorted(modalities)]
+        expected = {
+            "fear_conditioning": {"electric_shock", "freezing", "calcium"},
+            "neutral_exposure": {"freezing", "calcium"},
+            "recall_assessment": {"freezing", "calcium"},
+            "offline_consolidation": {"sleep_state", "eeg", "emg", "calcium"},
+        }.get(session_type, set())
+        missing = expected - event_types - modalities
+        missing_labels = [event_labels.get(item, modality_labels.get(item, item)) for item in sorted(missing)]
+        summary = stage_intro + f"当前已载入{'、'.join(coverage)}，可在本次会话内复核已有证据。"
+        if missing_labels:
+            summary += f"当前尚未记录{'、'.join(missing_labels)}，不能当作相应证据已完整载入。"
+        summary += "本地评估不代替造模效果的人工判断。"
+        confidence = 0.6 if missing else 0.86
     else:
-        summary = "当前只有会话目录和模态说明，尚未载入时间序列，不能形成造模效果判断。"
-        recommendation = "先载入会话内容，再开展刺激—行为—神经活动联合分析。"
+        summary = stage_intro + "当前尚无已载入的事件或信号，不能形成造模效果判断。"
+        recommendation = "先核对并载入本阶段的实际会话内容，再开展多模态联合复核。"
         confidence = 0.52
     result = {
         "question": question,

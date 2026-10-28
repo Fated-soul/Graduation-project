@@ -94,8 +94,24 @@ def _read_modeling_events(
 ) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     groups = _known_interval_groups(nwb, session_type)
+    expected = (
+        {"sleep_state"} if session_type == "offline_consolidation"
+        else {"freezing"} if session_type in {"neutral_exposure", "recall_assessment"}
+        else {"electric_shock", "freezing"}
+    )
+    missing = expected - {_interval_event_type(group.name) for group in groups}
     if not groups:
-        groups = _groups_with_intervals(nwb)
+        groups = [
+            group for group in _groups_with_intervals(nwb)
+            if "/stimulus/templates/" not in group.name
+        ]
+    elif missing:
+        # A recognized freezing group must not hide shocks stored elsewhere.
+        groups.extend(
+            group for group in _groups_with_intervals(nwb)
+            if _interval_event_type(group.name) in missing
+            and "/stimulus/templates/" not in group.name
+        )
     for group in groups:
         name = group.name.rsplit("/", 1)[-1]
         lowered = name.lower()
@@ -133,15 +149,32 @@ def _read_modeling_events(
 
 
 def _known_interval_groups(nwb: h5py.File, session_type: str) -> list[h5py.Group]:
-    paths = (
-        ("processing/sleep/SleepIntervals",)
+    families = (
+        (("processing/sleep/SleepIntervals", "intervals/SleepIntervals"),)
         if session_type == "offline_consolidation"
         else (
-            "stimulus/ShockStimuli",
-            "processing/behavior/FreezingIntervals",
+            ("stimulus/presentation/ShockStimuli", "stimulus/ShockStimuli", "intervals/ShockStimuli"),
+            ("processing/behavior/FreezingIntervals", "intervals/FreezingIntervals"),
         )
     )
-    return [nwb[path] for path in paths if path in nwb and isinstance(nwb[path], h5py.Group)]
+    groups: list[h5py.Group] = []
+    for paths in families:
+        for path in paths:
+            if path in nwb and isinstance(nwb[path], h5py.Group) and "start_time" in nwb[path]:
+                groups.append(nwb[path])
+                break
+    return groups
+
+
+def _interval_event_type(path: str) -> str | None:
+    name = path.rsplit("/", 1)[-1].lower()
+    if "shock" in name:
+        return "electric_shock"
+    if "freez" in name:
+        return "freezing"
+    if "sleep" in name or "state" in name:
+        return "sleep_state"
+    return None
 
 
 def _groups_with_intervals(nwb: h5py.File) -> list[h5py.Group]:

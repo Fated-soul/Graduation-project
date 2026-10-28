@@ -12,7 +12,7 @@ class CatalogSyncRequest(BaseModel):
 class SessionAnnotationCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    timestamp_seconds: float | None = Field(default=None, ge=0)
+    timestamp_seconds: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     category: str = Field(..., min_length=1, max_length=80)
     note: str = Field(..., min_length=1, max_length=2000)
     created_by: str = Field(default="researcher", min_length=1, max_length=100)

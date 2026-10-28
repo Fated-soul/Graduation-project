@@ -62,6 +62,14 @@ API 文档：`http://127.0.0.1:8000/docs`
 4. 调用 `GET /api/public-data/sessions/{会话编号}/timeline` 获取统一时间轴证据。
 5. 使用注释和分析接口保存人工复核及 Agent 辅助决策。
 
+刺激导入支持标准的 `stimulus/presentation/ShockStimuli`，也兼容旧的
+`stimulus/ShockStimuli` 与 `intervals/ShockStimuli`。已识别冻结行为时仍会检查缺失的刺激类型，
+不会因为部分分组可读取而跳过其他事件。旧版本已载入但缺少电击的 FC 会话需要重新载入；
+重新载入只替换该会话的提取证据，不删除人工复核或历史分析。
+
+人工复核时间必须为有限、非负数，且不能超过本次会话已知时长；不符合要求时返回 422，
+不写入记录。尚无有效时长的会话只能提交 `timestamp_seconds: null` 的整体观察记录。
+
 行为视频接口 `GET /api/public-data/sessions/{会话编号}/video` 会在首次访问时完成下载和
 H.264 MP4 转换，结果缓存在 `backend/cache/videos`。后续播放支持浏览器分段读取，不会
 重复下载或转码。原始 WMV 地址仍可通过 `/video/original` 获取。
@@ -103,6 +111,10 @@ FastAPI 从 PostgreSQL 读取；DANDI 官方说明、原始论文、数据解释
 每次分析使用的资料会写入 `session_agent_analyses.knowledge_sources`，检索方式写入
 `session_agent_analyses.retrieval_mode`。前端据此展示可点击的参考资料。检索资料仅用于解释研究背景和
 分析边界，当前实验对象的结论仍以数据库中的真实观测数据为依据。
+
+生成服务不可用或明确关闭模型时，本地评估分别按基线适应、恐惧条件化、记忆回忆、离线巩固
+和跨周随访解释现有证据。摘要明确缺失的预期模态，不把其他阶段默认描述为 FC，也不将
+规则结果标为云端模型生成。历史分析保留原记录；证据重新导入后应重新发起评估。
 
 每条决策记录都保留实际提问。继续追问时调用
 `POST /api/public-data/sessions/{会话编号}/analyses/{决策编号}/follow-up`，后端通过

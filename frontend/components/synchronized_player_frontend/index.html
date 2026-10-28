@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; color: #1f3347; background: transparent; font-family: Arial, "Microsoft YaHei", sans-serif; }
+    .workspace { overflow: hidden; border: 1px solid #dbe3ea; border-radius: 8px; background: #fff; }
+    .video-shell { display: flex; min-height: 240px; align-items: center; justify-content: center; background: #0f1720; }
+    video { display: block; width: 100%; height: 285px; object-fit: contain; background: #0f1720; }
+    .video-empty { color: #b8c4ce; font-size: 14px; }
+    .panel { padding: 13px 16px 15px; }
+    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+    .toolbar-actions { display: flex; align-items: center; gap: 10px; }
+    .readout { color: #075f82; font-size: 13px; font-variant-numeric: tabular-nums; }
+    .use-time { min-height: 30px; padding: 5px 10px; border: 1px solid #9dcfe0; border-radius: 6px; color: #075f82; background: #f1f9fc; cursor: pointer; font-size: 12px; }
+    .use-time:hover { border-color: #1688b4; background: #e7f5fa; }
+    canvas { display: block; width: 100%; height: 320px; border: 1px solid #e1e8ee; border-radius: 6px; background: #f8fafc; cursor: crosshair; }
+    .scrubber { width: 100%; margin: 8px 0 4px; accent-color: #087eae; }
+    .legend { display: flex; gap: 15px; flex-wrap: wrap; color: #66788a; font-size: 12px; }
+    .legend span::before { display: inline-block; width: 9px; height: 9px; margin-right: 5px; border-radius: 2px; content: ""; }
+    .shock::before { background: #dc4b4b; }
+    .freeze::before { background: #11a4a1; }
+    .calcium::before { background: #7656c7; }
+    .physio::before { background: #1688c4; }
+    .annotation::before { background: #e39728; }
+    .detail { min-height: 38px; margin-top: 9px; padding: 8px 10px; border-left: 3px solid #8fc4d8; color: #52697d; background: #f6fafc; font-size: 12px; line-height: 1.55; }
+  </style>
+</head>
+<body>
+  <div class="workspace">
+    <div class="video-shell">
+      <video id="sessionVideo" controls preload="metadata" playsinline></video>
+      <div id="videoEmpty" class="video-empty">本次会话没有行为视频，仍可复核其他模态证据</div>
+    </div>
+    <div class="panel">
+      <div class="toolbar">
+        <strong>多模态同步时间轴</strong>
+        <div class="toolbar-actions">
+          <span id="readout" class="readout">00:00.0 / 00:00.0</span>
+          <button id="useTime" class="use-time" type="button">采用当前画面时间</button>
+        </div>
+      </div>
+      <canvas id="timeline" aria-label="多模态造模证据时间轴"></canvas>
+      <input id="scrubber" class="scrubber" type="range" min="0" step="0.1" value="0">
+      <div class="legend">
+        <span class="shock">足底电击</span>
+        <span class="freeze">冻结/状态事件</span>
+        <span class="calcium">钙活动</span>
+        <span class="physio">运动与生理信号</span>
+        <span class="annotation">人工复核</span>
+      </div>
+      <div id="detail" class="detail">暂停视频、拖动进度条或点击时间轴后，复核时间会自动同步。</div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("timeline");
+    const ctx = canvas.getContext("2d");
+    const video = document.getElementById("sessionVideo");
+    const videoEmpty = document.getElementById("videoEmpty");
+    const scrubber = document.getElementById("scrubber");
+    const readout = document.getElementById("readout");
+    const detail = document.getElementById("detail");
+    const useTime = document.getElementById("useTime");
+
+    let data = { duration: 1, sessionType: "fear_conditioning", events: [], signals: [], annotations: [] };
+    let duration = 1;
+    let currentTime = 0;
+    let geometry = null;
+    let lastEmitted = null;
+    let lastPlaybackEmitAt = 0;
+    let emitTimer = null;
+
+    function sendMessage(type, extra = {}) {
+      window.parent.postMessage({ isStreamlitMessage: true, type, ...extra }, "*");
+    }
+
+    function setFrameHeight(height) {
+      sendMessage("streamlit:setFrameHeight", { height });
+    }
+
+    function emitCurrentTime() {
+      const value = Math.round(Math.max(0, Math.min(duration, currentTime)) * 10) / 10;
+      if (lastEmitted === value) return;
+      lastEmitted = value;
+      sendMessage("streamlit:setComponentValue", { value });
+    }
+
+    function scheduleEmit() {
+      window.clearTimeout(emitTimer);
+      emitTimer = window.setTimeout(emitCurrentTime, 180);
+    }
+
+    function fmt(seconds) {
+      const safe = Math.max(0, Number(seconds || 0));
+      const minutes = Math.floor(safe / 60);
+      const remaining = safe - minutes * 60;
+      return String(minutes).padStart(2, "0") + ":" + remaining.toFixed(1).padStart(4, "0");
+    }
+
+    function xFor(time, left, width) {
+      return left + Math.max(0, Math.min(duration, time)) / duration * width;
+    }
+
+    function normalized(points, value) {
+      const values = points.map(item => Number(item.value)).filter(Number.isFinite);
+      if (!values.length) return 0;
+      const low = Math.min(...values);
+      const high = Math.max(...values);
+      return (Number(value) - low) / Math.max(0.000001, high - low);
+    }
+
+    function resize() {
+      const rect = canvas.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.max(1, Math.round(rect.width * ratio));
+      canvas.height = Math.max(1, Math.round(rect.height * ratio));
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      draw();
+    }
+
+    function line(points, yTop, yBottom, color, left, width) {
+      if (!points.length) return;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      points.forEach((point, index) => {
+        const x = xFor(Number(point.time), left, width);
+        const y = yBottom - normalized(points, point.value) * (yBottom - yTop);
+        if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    function draw() {
+      const width = canvas.clientWidth;
+      const left = 112;
+      const right = 18;
+      const plotWidth = Math.max(10, width - left - right);
+      geometry = { left, width: plotWidth };
+      ctx.clearRect(0, 0, width, canvas.clientHeight);
+      ctx.fillStyle = "#f8fafc";
+      ctx.fillRect(0, 0, width, canvas.clientHeight);
+      ctx.font = '12px Arial, "Microsoft YaHei", sans-serif';
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#60758a";
+      const offline = data.sessionType === "offline_consolidation";
+      const fearConditioning = data.sessionType === "fear_conditioning";
+      const labels = offline
+        ? [["睡眠状态", 42], ["钙活动", 98], ["脑电", 154], ["肌电", 210], ["人工复核", 266]]
+        : [[fearConditioning ? "刺激与冻结" : "行为与状态", 42], ["钙活动", 98], ["运动", 154], ["其他生理信号", 210], ["人工复核", 266]];
+      labels.forEach(item => ctx.fillText(item[0], left - 12, item[1]));
+
+      ctx.strokeStyle = "#dce5ec";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      for (let index = 0; index <= 5; index += 1) {
+        const seconds = duration * index / 5;
+        const x = xFor(seconds, left, plotWidth);
+        ctx.beginPath();
+        ctx.moveTo(x, 18);
+        ctx.lineTo(x, 276);
+        ctx.stroke();
+        ctx.fillStyle = "#74869a";
+        ctx.fillText(fmt(seconds), x, 282);
+      }
+
+      for (const event of data.events) {
+        const startX = xFor(Number(event.start), left, plotWidth);
+        const stopX = xFor(Math.max(Number(event.start), Number(event.stop)), left, plotWidth);
+        const active = currentTime >= Number(event.start) && currentTime <= Number(event.stop);
+        ctx.fillStyle = event.type === "electric_shock"
+          ? (active ? "#b62f2f" : "#dc4b4b")
+          : (active ? "#087b79" : "#24aaa7");
+        ctx.fillRect(startX, 34, Math.max(4, stopX - startX), 18);
+      }
+
+      const calcium = data.signals.filter(point => point.modality === "calcium");
+      const motion = data.signals.filter(point => point.modality === "motion");
+      const eeg = data.signals.filter(point => point.modality === "eeg");
+      const emg = data.signals.filter(point => point.modality === "emg");
+      line(calcium, 73, 119, "#7656c7", left, plotWidth);
+      if (offline) {
+        line(eeg, 129, 175, "#169b6b", left, plotWidth);
+        line(emg, 185, 231, "#d27b19", left, plotWidth);
+      } else {
+        line(motion, 129, 175, "#1688c4", left, plotWidth);
+        line(eeg, 185, 231, "#169b6b", left, plotWidth);
+        line(emg, 185, 231, "#d27b19", left, plotWidth);
+      }
+
+      for (const note of data.annotations) {
+        const x = xFor(Number(note.time), left, plotWidth);
+        ctx.fillStyle = "#e39728";
+        ctx.beginPath();
+        ctx.moveTo(x, 248);
+        ctx.lineTo(x - 6, 266);
+        ctx.lineTo(x + 6, 266);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      const playhead = xFor(currentTime, left, plotWidth);
+      ctx.strokeStyle = "#d84343";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(playhead, 17);
+      ctx.lineTo(playhead, 276);
+      ctx.stroke();
+      ctx.fillStyle = "#d84343";
+      ctx.beginPath();
+      ctx.arc(playhead, 17, 4, 0, Math.PI * 2);
+      ctx.fill();
+      readout.textContent = fmt(currentTime) + " / " + fmt(duration);
+    }
+
+    function seek(seconds, emit = false) {
+      currentTime = Math.max(0, Math.min(duration, Number(seconds || 0)));
+      scrubber.value = String(currentTime);
+      if (!video.hidden && Number.isFinite(video.duration)) video.currentTime = currentTime;
+      draw();
+      if (emit) scheduleEmit();
+    }
+
+    function handleRender(args) {
+      data = args.payload || data;
+      duration = Math.max(1, Number(data.duration || 1));
+      scrubber.max = String(duration);
+      currentTime = Math.max(0, Math.min(duration, currentTime));
+
+      const videoUrl = String(args.video_url || "");
+      if (videoUrl) {
+        video.hidden = false;
+        videoEmpty.hidden = true;
+        if (video.dataset.source !== videoUrl) {
+          video.dataset.source = videoUrl;
+          video.src = videoUrl;
+          currentTime = 0;
+          lastEmitted = null;
+        }
+      } else {
+        video.pause();
+        video.removeAttribute("src");
+        video.dataset.source = "";
+        video.hidden = true;
+        videoEmpty.hidden = false;
+      }
+
+      video.style.height = args.compact ? "285px" : "390px";
+      resize();
+      setFrameHeight(args.compact ? 735 : 840);
+    }
+
+    window.addEventListener("message", event => {
+      if (event.data && event.data.type === "streamlit:render") {
+        handleRender(event.data.args || {});
+      }
+    });
+
+    canvas.addEventListener("click", event => {
+      if (!geometry) return;
+      const rect = canvas.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left - geometry.left) / geometry.width));
+      seek(ratio * duration, true);
+    });
+
+    canvas.addEventListener("mousemove", event => {
+      if (!geometry) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const time = Math.max(0, Math.min(duration, (x - geometry.left) / geometry.width * duration));
+      let message = fmt(time) + " · 点击可跳转并同步复核时间";
+      const matchedEvent = data.events.find(item => y >= 28 && y <= 58 && time >= Number(item.start) && time <= Math.max(Number(item.start), Number(item.stop)));
+      if (matchedEvent) {
+        message = matchedEvent.label + "：" + fmt(matchedEvent.start) + " 至 " + fmt(matchedEvent.stop);
+        if (matchedEvent.value !== null && matchedEvent.value !== undefined) message += " · " + matchedEvent.value + " " + matchedEvent.unit;
+      } else if (y >= 68 && y <= 236 && data.signals.length) {
+        const lane = y < 124 ? "calcium" : (y < 180 ? (data.sessionType === "offline_consolidation" ? "eeg" : "motion") : (data.sessionType === "offline_consolidation" ? "emg" : null));
+        const candidates = data.signals.filter(item => !lane || item.modality === lane);
+        if (candidates.length) {
+          const nearest = candidates.reduce((left, right) => Math.abs(Number(right.time) - time) < Math.abs(Number(left.time) - time) ? right : left);
+          message = nearest.name + "：" + Number(nearest.value).toFixed(3) + " " + nearest.unit + " · " + fmt(nearest.time);
+        }
+      }
+      detail.textContent = message;
+    });
+
+    canvas.addEventListener("mouseleave", () => {
+      detail.textContent = "暂停视频、拖动进度条或点击时间轴后，复核时间会自动同步。";
+    });
+    scrubber.addEventListener("input", () => seek(scrubber.value));
+    scrubber.addEventListener("change", emitCurrentTime);
+    useTime.addEventListener("click", () => {
+      if (!video.hidden) video.pause();
+      emitCurrentTime();
+    });
+    video.addEventListener("timeupdate", () => {
+      currentTime = Math.min(video.currentTime, duration);
+      scrubber.value = String(currentTime);
+      draw();
+      const now = Date.now();
+      if (!video.paused && now - lastPlaybackEmitAt >= 800) {
+        lastPlaybackEmitAt = now;
+        emitCurrentTime();
+      }
+    });
+    video.addEventListener("seeked", scheduleEmit);
+    video.addEventListener("pause", emitCurrentTime);
+    video.addEventListener("ended", emitCurrentTime);
+    video.addEventListener("error", () => {
+      detail.textContent = "当前浏览器无法直接解码该视频格式，可使用页面中的原始影像入口。";
+    });
+    window.addEventListener("resize", resize);
+
+    sendMessage("streamlit:componentReady", { apiVersion: 1 });
+  </script>
+</body>
+</html>

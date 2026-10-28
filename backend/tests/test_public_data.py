@@ -138,12 +138,18 @@ def test_offline_signals_sleep_labels_and_absolute_times(tmp_path) -> None:
             100,
             session_type="offline_consolidation",
         )
+        followup_events = _read_modeling_events(
+            nwb,
+            100,
+            session_type="longitudinal_followup",
+        )
         windows, _ = _read_signal_evidence(
             nwb,
             max_windows=10,
             max_rois=4,
             session_type="offline_consolidation",
         )
+        assert followup_events == events
 
     reference = datetime(2022, 9, 19, 13, 30, tzinfo=timezone.utc)
     _attach_absolute_times(events, windows, timestamps_reference_at=reference)

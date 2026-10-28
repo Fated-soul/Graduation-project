@@ -12,6 +12,7 @@ from components.metric_card import render_section_title
 from components.synchronized_player import render_synchronized_player
 from data.public_dataset import (
     add_annotation,
+    delete_annotation,
     format_datetime,
     get_aligned_subject_timeline,
     get_session,
@@ -43,6 +44,34 @@ MODALITY_COLORS = {
     "motion": "#1688c4",
     "eeg": "#169b6b",
     "emg": "#d27b19",
+}
+SIGNAL_UNIT_LABELS = {
+    "v": "V",
+    "volt": "V",
+    "volts": "V",
+    "mv": "mV",
+    "millivolt": "mV",
+    "millivolts": "mV",
+    "uv": "μV",
+    "μv": "μV",
+    "microvolt": "μV",
+    "microvolts": "μV",
+    "hz": "Hz",
+}
+ARBITRARY_UNIT_VALUES = {
+    "",
+    "a.u",
+    "a.u.",
+    "au",
+    "arbitrary unit",
+    "arbitrary units",
+    "dimensionless",
+    "n.a",
+    "n.a.",
+    "n/a",
+    "na",
+    "none",
+    "unitless",
 }
 SESSION_TYPE_COLORS = {
     "neutral_exposure": "#2c9f8f",
@@ -314,52 +343,22 @@ def _render_session_detail(session: dict[str, Any], *, key_prefix: str) -> None:
         metrics[2].metric("钙活动时间窗", sum(item.get("modality") == "calcium" for item in signals))
         metrics[3].metric("人工复核", len(timeline["annotations"]))
 
-    viewer, review_panel = st.columns([1.65, 0.85], gap="large")
-    with viewer:
-        render_synchronized_player(
-            video_url=session_video_url(session_id) if session.get("has_video") else None,
-            duration_seconds=session.get("duration_seconds"),
-            modeling_events=events,
-            signal_windows=signals,
-            annotations=timeline["annotations"],
-            session_type=session_type,
-            compact=True,
-        )
-    with review_panel:
-        render_section_title("人工复核", "记录目标时间位置的观察结论")
-        with st.form(f"{key_prefix}_annotation_form"):
-            duration = max(0.0, float(session.get("duration_seconds") or 0))
-            timestamp = st.number_input(
-                "会话内时间（秒）",
-                min_value=0.0,
-                max_value=duration if duration > 0 else None,
-                value=0.0,
-                step=0.1,
-                key=f"{key_prefix}_annotation_time",
-            )
-            choices = _annotation_choices(session_type)
-            category = st.selectbox("观察类别", choices, key=f"{key_prefix}_annotation_category")
-            note = st.text_area("复核结论", height=120, key=f"{key_prefix}_annotation_note")
-            submitted = st.form_submit_button("保存复核记录", type="primary", width="stretch")
-        if submitted:
-            if not note.strip():
-                st.warning("请先填写复核结论。")
-            else:
-                response = add_annotation(
-                    session_id,
-                    timestamp_seconds=float(timestamp),
-                    category=category,
-                    note=note.strip(),
-                )
-                if response.get("success") is False:
-                    st.error(str(response.get("message") or "保存失败。"))
-                else:
-                    st.success("复核记录已保存。")
-                    st.rerun()
-        if analyses:
-            with st.expander("最近一次 Agent 评估"):
-                st.write(analyses[0].get("summary") or "")
+    _render_review_workspace(
+        session_id=session_id,
+        session=session,
+        session_type=session_type,
+        events=events,
+        signals=signals,
+        annotations=timeline["annotations"],
+        analyses=analyses,
+        key_prefix=key_prefix,
+    )
 
+    _render_annotation_records(
+        session_id,
+        timeline["annotations"],
+        key_prefix=key_prefix,
+    )
     _render_signal_charts(session, events, signals)
     st.download_button(
         "导出本场会话证据",
@@ -376,6 +375,224 @@ def _render_session_detail(session: dict[str, Any], *, key_prefix: str) -> None:
     )
 
 
+@st.fragment
+def _render_review_workspace(
+    *,
+    session_id: int,
+    session: dict[str, Any],
+    session_type: str,
+    events: list[dict[str, Any]],
+    signals: list[dict[str, Any]],
+    annotations: list[dict[str, Any]],
+    analyses: list[dict[str, Any]],
+    key_prefix: str,
+) -> None:
+    duration = max(0.0, float(session.get("duration_seconds") or 0))
+    timestamp_key = f"{key_prefix}_annotation_time"
+    st.session_state.setdefault(timestamp_key, 0.0)
+
+    viewer, review_panel = st.columns([1.65, 0.85], gap="large")
+    with viewer:
+        selected_time = render_synchronized_player(
+            video_url=session_video_url(session_id) if session.get("has_video") else None,
+            duration_seconds=session.get("duration_seconds"),
+            modeling_events=events,
+            signal_windows=signals,
+            annotations=annotations,
+            session_type=session_type,
+            compact=True,
+            key=f"{key_prefix}_synchronized_player",
+        )
+        _sync_annotation_time(
+            timestamp_key,
+            selected_time,
+            duration_seconds=duration if duration > 0 else None,
+        )
+    with review_panel:
+        render_section_title("人工复核", "记录目标时间位置的观察结论")
+        with st.form(f"{key_prefix}_annotation_form"):
+            timestamp = st.number_input(
+                "复核时间点（秒）",
+                min_value=0.0,
+                max_value=duration if duration > 0 else None,
+                step=0.1,
+                format="%.1f",
+                key=timestamp_key,
+            )
+            st.caption("播放时自动跟随；暂停、拖动进度或点击时间轴后立即同步，也可手动微调。")
+            choices = _annotation_choices(session_type)
+            category = st.selectbox(
+                "观察类别",
+                choices,
+                key=f"{key_prefix}_annotation_category",
+            )
+            note = st.text_area(
+                "复核结论",
+                height=120,
+                key=f"{key_prefix}_annotation_note",
+            )
+            submitted = st.form_submit_button(
+                "保存复核记录",
+                type="primary",
+                width="stretch",
+            )
+        if submitted:
+            if not note.strip():
+                st.warning("请先填写复核结论。")
+            else:
+                response = add_annotation(
+                    session_id,
+                    timestamp_seconds=float(timestamp),
+                    category=category,
+                    note=note.strip(),
+                )
+                if response.get("success") is False:
+                    st.error(str(response.get("message") or "保存失败。"))
+                else:
+                    st.toast("复核记录已保存。", icon=":material/check_circle:")
+                    st.rerun()
+        if analyses:
+            with st.expander("最近一次 Agent 评估"):
+                st.write(analyses[0].get("summary") or "")
+
+
+def _render_annotation_records(
+    session_id: int,
+    annotations: list[dict[str, Any]],
+    *,
+    key_prefix: str,
+) -> None:
+    render_section_title(
+        "复核记录",
+        "按会话时间整理已保存的人工观察，可删除误录或不再采用的结论",
+    )
+    records = _sorted_annotations(annotations)
+    if not records:
+        st.info("当前会话还没有人工复核记录。")
+        return
+
+    for index, record in enumerate(records):
+        annotation_id = record.get("id")
+        with st.container(border=True):
+            content, action = st.columns([8, 1.35], gap="medium", vertical_alignment="top")
+            with content:
+                category = str(record.get("category") or "观察记录")
+                position = _format_session_offset(record.get("timestamp_seconds"))
+                st.markdown(f"**{category}** · 会话位置 {position}")
+                st.write(str(record.get("note") or "未填写复核结论"))
+                author = str(record.get("created_by") or "实验人员")
+                created_at = format_datetime(record.get("created_at"))
+                st.caption(f"记录人：{author} · 记录时间：{created_at}")
+            with action:
+                if annotation_id is None:
+                    st.button(
+                        "删除",
+                        icon=":material/delete:",
+                        key=f"{key_prefix}_annotation_delete_unavailable_{index}",
+                        disabled=True,
+                        width="stretch",
+                    )
+                    continue
+                with st.popover(
+                    "删除",
+                    icon=":material/delete:",
+                    width="stretch",
+                ):
+                    st.write("确认删除这条复核记录？删除后无法恢复。")
+                    if st.button(
+                        "确认删除",
+                        type="primary",
+                        key=f"{key_prefix}_annotation_delete_{annotation_id}",
+                        width="stretch",
+                    ):
+                        response = delete_annotation(session_id, int(annotation_id))
+                        if response.get("success") is False:
+                            st.error(str(response.get("message") or "删除失败。"))
+                        else:
+                            st.toast("复核记录已删除。", icon=":material/check_circle:")
+                            st.rerun()
+
+
+def _sync_annotation_time(
+    timestamp_key: str,
+    selected_time: Any,
+    *,
+    duration_seconds: float | None,
+) -> None:
+    normalized = _normalize_video_time(selected_time, duration_seconds)
+    if normalized is None:
+        return
+    marker_key = f"{timestamp_key}_last_player_value"
+    previous = st.session_state.get(marker_key)
+    if previous is not None and abs(float(previous) - normalized) < 0.05:
+        return
+    st.session_state[timestamp_key] = normalized
+    st.session_state[marker_key] = normalized
+
+
+def _normalize_video_time(value: Any, duration_seconds: float | None) -> float | None:
+    try:
+        seconds = max(0.0, float(value))
+    except (TypeError, ValueError):
+        return None
+    if duration_seconds is not None:
+        seconds = min(seconds, max(0.0, float(duration_seconds)))
+    return round(seconds, 1)
+
+
+def _sorted_annotations(annotations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def sort_key(item: dict[str, Any]) -> tuple[float, str, int]:
+        timestamp = item.get("timestamp_seconds")
+        try:
+            position = float(timestamp)
+        except (TypeError, ValueError):
+            position = float("inf")
+        created_at = str(item.get("created_at") or "")
+        try:
+            annotation_id = int(item.get("id") or 0)
+        except (TypeError, ValueError):
+            annotation_id = 0
+        return position, created_at, annotation_id
+
+    return sorted(annotations, key=sort_key)
+
+
+def _format_session_offset(value: Any) -> str:
+    try:
+        seconds = max(0.0, float(value))
+    except (TypeError, ValueError):
+        return "未定位"
+    minutes, remaining = divmod(seconds, 60)
+    hours, minutes = divmod(int(minutes), 60)
+    if hours:
+        return f"{hours:02d}:{minutes:02d}:{remaining:04.1f}"
+    return f"{minutes:02d}:{remaining:04.1f}"
+
+
+def _signal_axis_label(
+    modality: str,
+    points: list[dict[str, Any]],
+) -> tuple[str, str]:
+    signal_name = next(
+        (str(item.get("signal_name")).strip() for item in points if item.get("signal_name")),
+        MODALITY_LABELS.get(modality, modality),
+    )
+    raw_unit = next(
+        (str(item.get("unit")).strip() for item in points if item.get("unit") is not None),
+        "",
+    )
+    unit_label = _display_signal_unit(raw_unit)
+    return f"{signal_name}（{unit_label}）", unit_label
+
+
+def _display_signal_unit(value: Any) -> str:
+    raw = str(value or "").strip()
+    normalized = raw.lower().replace("μ", "u").replace("µ", "u")
+    if normalized in ARBITRARY_UNIT_VALUES:
+        return "a.u."
+    return SIGNAL_UNIT_LABELS.get(normalized, raw)
+
+
 def _render_signal_charts(
     session: dict[str, Any],
     events: list[dict[str, Any]],
@@ -386,8 +603,11 @@ def _render_signal_charts(
         render_section_title("信号变化", "按本场会话的真实采集时刻展示各类信号摘要")
         fig = make_subplots(rows=len(available), cols=1, shared_xaxes=True, vertical_spacing=0.08)
         reference = _parse_datetime(session.get("timestamps_reference_at") or session.get("session_started_at"))
+        uses_arbitrary_units = False
         for row, modality in enumerate(available, start=1):
             points = [item for item in signals if item.get("modality") == modality]
+            axis_label, unit_label = _signal_axis_label(modality, points)
+            uses_arbitrary_units = uses_arbitrary_units or unit_label == "a.u."
             x_values = [
                 _parse_datetime(item.get("window_started_at"))
                 or (reference + timedelta(seconds=float(item.get("window_start_seconds") or 0)) if reference else None)
@@ -399,13 +619,15 @@ def _render_signal_charts(
                     y=[item.get("mean_value") for item in points],
                     mode="lines",
                     line={"color": MODALITY_COLORS[modality], "width": 2},
-                    name=MODALITY_LABELS[modality],
-                    hovertemplate="%{x|%H:%M:%S}<br>%{y:.4g}<extra></extra>",
+                    name=axis_label,
+                    hovertemplate=(
+                        f"%{{x|%H:%M:%S}}<br>{axis_label}：%{{y:.4g}}<extra></extra>"
+                    ),
                 ),
                 row=row,
                 col=1,
             )
-            fig.update_yaxes(title_text=MODALITY_LABELS[modality], fixedrange=True, row=row, col=1)
+            fig.update_yaxes(title_text=axis_label, fixedrange=True, row=row, col=1)
         fig.update_xaxes(title_text="真实采集时间", fixedrange=True, row=len(available), col=1)
         fig.update_layout(
             height=max(270, 180 * len(available)),
@@ -415,6 +637,11 @@ def _render_signal_charts(
             paper_bgcolor="rgba(0,0,0,0)",
         )
         st.plotly_chart(fig, width="stretch", config={"displayModeBar": False, "scrollZoom": False})
+        if uses_arbitrary_units:
+            st.caption(
+                "a.u. 表示任意单位；公开数据未提供可换算的物理量纲时，"
+                "图中保留原始相对信号幅值，不额外推断单位。"
+            )
 
     sleep_events = [item for item in events if item.get("event_type") == "sleep_state"]
     if sleep_events:

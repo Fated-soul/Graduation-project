@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from math import isfinite
+
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import FileResponse, RedirectResponse
 
@@ -156,8 +158,18 @@ def create_annotation(
     request: SessionAnnotationCreate,
 ) -> APIResponse:
     try:
-        if public_data_repository.get_session(session_id) is None:
+        session = public_data_repository.get_session(session_id)
+        if session is None:
             raise HTTPException(status_code=404, detail="session not found")
+        if request.timestamp_seconds is not None:
+            duration = session.get("duration_seconds")
+            if duration is None or not isfinite(float(duration)) or float(duration) < 0:
+                raise HTTPException(
+                    status_code=422,
+                    detail="会话时长尚未确定，请先载入会话内容，或保存不指定时间的复核记录。",
+                )
+            if request.timestamp_seconds > float(duration):
+                raise HTTPException(status_code=422, detail="复核时间不能超过会话时长。")
         annotation = public_data_repository.create_annotation(
             session_id, request.model_dump()
         )
