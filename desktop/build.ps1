@@ -54,7 +54,14 @@ try {
     Copy-Item -LiteralPath (Join-Path $desktop $runGuideName) `
         -Destination (Join-Path $dist "MingChaShuHao\$runGuideName") -Force
 
-    $portableArchive = Join-Path $dist 'MingChaShuHao-Portable-3.0.0.zip'
+    $buildInfo = [ordered]@{
+        version = '3.0.1'
+        built_at = [DateTimeOffset]::Now.ToString('o')
+        source_commit = (& git rev-parse HEAD 2>$null)
+    }
+    $buildInfo | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $dist 'MingChaShuHao\build-info.json') -Encoding UTF8
+
+    $portableArchive = Join-Path $dist 'MingChaShuHao-Portable-3.0.1.zip'
     Compress-Archive -LiteralPath (Join-Path $dist 'MingChaShuHao') `
         -DestinationPath $portableArchive -CompressionLevel Optimal -Force
 
@@ -66,6 +73,7 @@ try {
         $iscc = $isccCandidates | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
         if ($iscc) {
             & $iscc (Join-Path $desktop 'installer.iss')
+            if ($LASTEXITCODE -ne 0) { throw 'Inno Setup build failed.' }
         } else {
             Write-Host 'Inno Setup was not found. The portable application is ready.'
         }

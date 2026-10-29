@@ -178,10 +178,11 @@ desktop/dist/MingChaShuHao/MingChaShuHao.exe
 ```
 
 需要复制到其他 Windows 电脑时，使用便携包
-`desktop/dist/MingChaShuHao-Portable-3.0.0.zip`，完整解压后再双击程序。
+`desktop/dist/MingChaShuHao-Portable-3.0.1.zip`，完整解压后再双击程序。
 
 在当前电脑执行 `powershell -ExecutionPolicy Bypass -File desktop/install.ps1`，会将桌面版安装
-到当前用户的软件目录、导入 `agent/.env`，并创建“明察鼠毫”桌面和开始菜单快捷方式。
+到当前用户的软件目录，并创建“明察鼠毫”桌面和开始菜单快捷方式。首次安装导入
+`agent/.env`；升级时默认保留现有配置，需要重新导入时添加 `-RefreshConfig`。
 
 在新电脑重新构建：
 

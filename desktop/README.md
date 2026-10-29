@@ -29,20 +29,20 @@ desktop/dist/MingChaShuHao/MingChaShuHao.exe
 ```
 
 目录版必须连同同目录的 `_internal` 一起使用，不能只复制单个 EXE。若电脑安装了 Inno Setup
-6，构建脚本还会生成 `desktop/dist/MingChaShuHao-Setup-3.0.0.exe` 安装包。
+6，构建脚本还会生成 `desktop/dist/MingChaShuHao-Setup-3.0.1.exe` 安装包。
 
 构建脚本同时生成可迁移到其他 Windows 电脑的便携包：
 
 ```text
-desktop/dist/MingChaShuHao-Portable-3.0.0.zip
+desktop/dist/MingChaShuHao-Portable-3.0.1.zip
 ```
 
 解压整个压缩包后双击 `MingChaShuHao.exe`，不要在压缩包内部直接运行，也不要单独复制 EXE。
 
 ## 安装到本机
 
-在项目根目录执行以下命令，可将成品安装到当前 Windows 用户的软件目录，导入当前
-`agent/.env` 配置，并创建桌面与开始菜单快捷方式：
+在项目根目录执行以下命令，可将成品安装到当前 Windows 用户的软件目录，并创建桌面与
+开始菜单快捷方式。首次安装导入当前 `agent/.env`，已有配置在升级时默认保留：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File desktop/install.ps1
@@ -51,6 +51,12 @@ powershell -ExecutionPolicy Bypass -File desktop/install.ps1
 安装位置为 `%LOCALAPPDATA%\Programs\MingChaShuHao`，运行配置位于
 `%LOCALAPPDATA%\MingChaShuHao\config\.env`。安装过程不会将 API 密钥写入 EXE、压缩包或
 Git 仓库。
+
+需要主动重新导入项目配置时，执行 `desktop/install.ps1 -RefreshConfig`。脚本会先在配置
+目录备份旧文件，再导入 `agent/.env`；一般更新程序不需要该参数。
+
+3.0.1 包含复核终点校验、全程证据抽样、完整历史追问与 PDF，以及本地评估来源说明。
+构建目录中的 `build-info.json` 记录版本、构建时间和对应源码提交，便于核对安装版本。
 
 依赖已安装时可缩短构建时间：
 

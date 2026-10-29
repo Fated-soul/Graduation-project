@@ -1,5 +1,5 @@
 #define MyAppName "明察鼠毫"
-#define MyAppVersion "3.0.0"
+#define MyAppVersion "3.0.1"
 #define MyAppPublisher "明察鼠毫项目组"
 #define MyAppExeName "MingChaShuHao.exe"
 

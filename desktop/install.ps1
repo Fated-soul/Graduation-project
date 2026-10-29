@@ -1,5 +1,6 @@
 param(
-    [switch]$NoShortcuts
+    [switch]$NoShortcuts,
+    [switch]$RefreshConfig
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,7 +18,8 @@ $configPath = Join-Path $configDir '.env'
 if (-not (Test-Path -LiteralPath $sourceExe)) {
     throw "Desktop build not found: $sourceExe"
 }
-if (-not (Test-Path -LiteralPath $agentEnv)) {
+$writeConfig = $RefreshConfig -or -not (Test-Path -LiteralPath $configPath)
+if ($writeConfig -and -not (Test-Path -LiteralPath $agentEnv)) {
     throw "Agent configuration not found: $agentEnv"
 }
 if (-not (Test-Path -LiteralPath $envTemplate)) {
@@ -36,16 +38,22 @@ if ($LASTEXITCODE -gt 7) {
     throw "Application file deployment failed. Robocopy exit code: $LASTEXITCODE"
 }
 
-$templateContent = [IO.File]::ReadAllText($envTemplate, [Text.Encoding]::UTF8).TrimEnd()
-$agentContent = [IO.File]::ReadAllText($agentEnv, [Text.Encoding]::UTF8).Trim()
-$mergedContent = $templateContent + [Environment]::NewLine + [Environment]::NewLine +
-    '# Imported from the project agent/.env during local deployment.' +
-    [Environment]::NewLine + $agentContent + [Environment]::NewLine
-[IO.File]::WriteAllText(
-    $configPath,
-    $mergedContent,
-    [Text.UTF8Encoding]::new($false)
-)
+if ($writeConfig) {
+    if (Test-Path -LiteralPath $configPath) {
+        $backupPath = $configPath + '.' + [DateTime]::Now.ToString('yyyyMMdd-HHmmss') + '.bak'
+        Copy-Item -LiteralPath $configPath -Destination $backupPath
+    }
+    $templateContent = [IO.File]::ReadAllText($envTemplate, [Text.Encoding]::UTF8).TrimEnd()
+    $agentContent = [IO.File]::ReadAllText($agentEnv, [Text.Encoding]::UTF8).Trim()
+    $mergedContent = $templateContent + [Environment]::NewLine + [Environment]::NewLine +
+        '# Imported from the project agent/.env during local deployment.' +
+        [Environment]::NewLine + $agentContent + [Environment]::NewLine
+    [IO.File]::WriteAllText(
+        $configPath,
+        $mergedContent,
+        [Text.UTF8Encoding]::new($false)
+    )
+}
 
 if (-not $NoShortcuts) {
     $shell = New-Object -ComObject WScript.Shell
@@ -89,4 +97,8 @@ if (-not $NoShortcuts) {
 
 Write-Host "Application installed: $installedExe"
 Write-Host "Runtime configuration: $configPath"
-Write-Host 'The current agent/.env configuration has been imported.'
+if ($writeConfig) {
+    Write-Host 'The current agent/.env configuration has been imported.'
+} else {
+    Write-Host 'The existing runtime configuration has been preserved.'
+}
