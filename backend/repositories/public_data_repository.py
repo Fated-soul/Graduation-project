@@ -396,21 +396,45 @@ def get_analysis(session_pk: int, analysis_id: int) -> dict[str, Any] | None:
         return _dict(cursor.fetchone())
 
 
-def get_analyses(session_pk: int, limit: int = 20) -> list[dict[str, Any]]:
+def get_analyses(
+    session_pk: int, limit: int = 20, before_id: int | None = None,
+) -> list[dict[str, Any]]:
+    query = """
+        SELECT analysis.*,
+               parent.question AS parent_question,
+               parent.created_at AS parent_created_at
+        FROM session_agent_analyses AS analysis
+        LEFT JOIN session_agent_analyses AS parent
+          ON parent.id = analysis.parent_analysis_id
+        WHERE analysis.session_id = %s
+    """
+    params: list[Any] = [session_pk]
+    if before_id is not None:
+        query += " AND analysis.id < %s"
+        params.append(before_id)
+    query += " ORDER BY analysis.id DESC LIMIT %s"
+    params.append(limit)
     with get_dict_cursor() as cursor:
+        cursor.execute(query, tuple(params))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def get_analysis_chain(session_pk: int, analysis_id: int) -> list[dict[str, Any]]:
+    with get_dict_cursor() as cursor:
+        # UNION also terminates malformed cycles without crossing session boundaries.
         cursor.execute(
             """
-            SELECT analysis.*,
-                   parent.question AS parent_question,
-                   parent.created_at AS parent_created_at
-            FROM session_agent_analyses AS analysis
-            LEFT JOIN session_agent_analyses AS parent
-              ON parent.id = analysis.parent_analysis_id
-            WHERE analysis.session_id = %s
-            ORDER BY analysis.created_at DESC, analysis.id DESC
-            LIMIT %s
+            WITH RECURSIVE chain AS (
+                SELECT * FROM session_agent_analyses
+                WHERE session_id = %s AND id = %s
+                UNION
+                SELECT parent.* FROM session_agent_analyses AS parent
+                JOIN chain ON parent.id = chain.parent_analysis_id
+                WHERE parent.session_id = %s
+            )
+            SELECT * FROM chain ORDER BY id
             """,
-            (session_pk, limit),
+            (session_pk, analysis_id, session_pk),
         )
         return [dict(row) for row in cursor.fetchall()]
 

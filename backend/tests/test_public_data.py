@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import h5py
 import numpy as np
 
-from backend.services.dandi_service import _analysis_question_with_context, _parse_nwb_asset
+from backend.services.dandi_service import _analysis_history, _parse_nwb_asset
 from backend.services.nwb_import_service import (
     _attach_absolute_times,
     _read_modeling_events,
@@ -60,19 +60,19 @@ def test_parse_offline_asset_marks_sleep_and_ephys() -> None:
 
 
 def test_follow_up_question_keeps_previous_decision_context() -> None:
-    prompt = _analysis_question_with_context(
-        "哪些行为片段仍需人工复核？",
+    history = _analysis_history([
         {
             "question": "本次造模反应是否充分？",
             "summary": "刺激后冻结行为增加。",
             "evidence": ["记录到三次足底电击。"],
             "recommendation": "复核刺激后的行为视频。",
         },
-    )
+    ])
 
-    assert "上一条问题：本次造模反应是否充分？" in prompt
-    assert "上一条结论：刺激后冻结行为增加。" in prompt
-    assert "本次追问：哪些行为片段仍需人工复核？" in prompt
+    assert history[0]["question"] == "本次造模反应是否充分？"
+    assert history[0]["summary"] == "刺激后冻结行为增加。"
+    assert history[0]["evidence"] == ["记录到三次足底电击。"]
+    assert history[0]["recommendation"] == "复核刺激后的行为视频。"
 
 
 def test_nwb_events_and_processed_signals_are_imported(tmp_path) -> None:

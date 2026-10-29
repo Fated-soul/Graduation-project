@@ -83,8 +83,11 @@ def analyze_dataset_session(
     *,
     question: str,
     model: str | None = None,
+    history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {"question": question}
+    if history:
+        payload["history"] = history
     if model:
         payload["model"] = model
     return _request(

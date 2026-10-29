@@ -90,6 +90,7 @@ def analyze_public_dataset_session(
             context=context,
             question=request.question,
             model=request.model or config.DASHSCOPE_MODEL,
+            history=[turn.model_dump() for turn in request.history],
         )
     except BackendAPIError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

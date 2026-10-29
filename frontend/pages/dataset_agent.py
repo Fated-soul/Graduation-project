@@ -14,6 +14,7 @@ from data.public_dataset import (
     get_sessions,
 )
 from utils.analysis_report_pdf import build_analysis_thread_report_pdf
+from utils.analysis_source import analysis_source_label
 
 
 QUESTION_PRESETS = (
@@ -101,7 +102,12 @@ def render() -> None:
         st.warning("该会话尚未载入多模态证据，请先在“造模会话”中完成载入。")
         return
 
-    analyses = get_session_analyses(int(selected_id))
+    try:
+        analyses = get_session_analyses(int(selected_id))
+    except RuntimeError as exc:
+        st.warning(str(exc))
+        _render_composer(int(selected_id))
+        return
     _render_composer(int(selected_id))
     _render_conversation(selected, analyses)
 
@@ -351,13 +357,15 @@ def _render_analysis_exchange(
             if confidence is not None
             else "未评定"
         )
-        response_name = "追问答复" if is_follow_up else "Agent 辅助结论"
+        response_name, source_description = analysis_source_label(analysis)
+        if is_follow_up:
+            response_name += " · 追问答复"
         st.markdown(
             f"""
             <div class="decision-response-header">
                 <div>
                     <strong>{response_name}</strong>
-                    <span>基于当前会话多模态证据与知识库资料形成</span>
+                    <span>{escape(source_description)}</span>
                 </div>
                 <div class="decision-confidence">证据充分度&nbsp; {confidence_text}</div>
             </div>

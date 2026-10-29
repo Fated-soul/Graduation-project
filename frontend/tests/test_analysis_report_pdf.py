@@ -12,6 +12,7 @@ from utils.analysis_report_pdf import (
     build_analysis_report_pdf,
     build_analysis_thread_report_pdf,
 )
+from utils import analysis_report_pdf
 
 
 def test_analysis_report_is_generated_as_a_nonempty_pdf() -> None:
@@ -75,3 +76,35 @@ def test_thread_report_keeps_followups_in_the_same_pdf() -> None:
 
     assert thread_pdf.startswith(b"%PDF-")
     assert len(thread_pdf) > len(single_pdf)
+
+
+def test_report_builds_all_turns_beyond_the_old_list_limit(monkeypatch) -> None:
+    original = analysis_report_pdf._analysis_exchange_story
+    exported = []
+
+    def capture(index, analysis, styles):
+        exported.append(analysis["question"])
+        return original(index, analysis, styles)
+
+    monkeypatch.setattr(analysis_report_pdf, "_analysis_exchange_story", capture)
+    turns = [{
+        "id": index, "parent_analysis_id": index - 1 if index > 1 else None,
+        "question": f"问题 {index}", "summary": f"答复 {index}",
+        "analysis_source": "multimodal_modeling_evidence",
+    } for index in range(1, 26)]
+
+    pdf = build_analysis_thread_report_pdf({"subject_code": "test-mouse"}, turns)
+
+    assert pdf.startswith(b"%PDF-")
+    assert exported == [f"问题 {index}" for index in range(1, 26)]
+
+
+def test_local_assessment_source_is_included_in_the_report_story() -> None:
+    normal, bold = analysis_report_pdf._register_fonts()
+    styles = analysis_report_pdf._build_styles(normal, bold)
+    story = analysis_report_pdf._analysis_exchange_story(0, {
+        "question": "测试", "summary": "本地结论", "analysis_source": "multimodal_modeling_evidence",
+    }, styles)
+    text = "\n".join(item.getPlainText() for item in story if hasattr(item, "getPlainText"))
+    assert "本地证据评估" in text
+    assert "未使用云端模型或知识库" in text

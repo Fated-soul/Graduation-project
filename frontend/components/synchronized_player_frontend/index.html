@@ -82,7 +82,9 @@
     }
 
     function emitCurrentTime() {
-      const value = Math.round(Math.max(0, Math.min(duration, currentTime)) * 10) / 10;
+      const value = currentTime >= duration
+        ? duration
+        : Math.min(duration, Math.round(Math.max(0, currentTime) * 10) / 10);
       if (lastEmitted === value) return;
       lastEmitted = value;
       sendMessage("streamlit:setComponentValue", { value });

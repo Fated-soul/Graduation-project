@@ -24,6 +24,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from utils.analysis_source import analysis_source_label
 
 NAVY = colors.HexColor("#17364E")
 TEAL = colors.HexColor("#087EAE")
@@ -76,8 +77,8 @@ def build_analysis_thread_report_pdf(session: dict, analyses: list[dict]) -> byt
         ),
         Spacer(1, 3 * mm),
         Paragraph(
-            "报告说明：本报告由系统根据当前会话证据与检索资料自动形成，"
-            "用于辅助实验人员复核与决策，不替代专业研究判断。",
+            "报告说明：本报告汇集各轮问题与答复，并分别注明模型分析、本地评估或未记录的来源。"
+            "参考资料以各轮实际记录为准；报告用于辅助复核，不替代专业研究判断。",
             styles["note"],
         ),
         Spacer(1, 6 * mm),
@@ -121,7 +122,8 @@ def _analysis_exchange_story(
     confidence = _normalise_confidence(analysis.get("confidence"))
     confidence_text = f"{confidence:.0%}" if confidence is not None else "未评定"
     question_label = "初始问题" if index == 0 else f"第 {index} 次追问"
-    answer_label = "Agent 首次回答" if index == 0 else f"Agent 第 {index} 次追问答复"
+    source_label, source_description = analysis_source_label(analysis)
+    answer_label = source_label if index == 0 else f"{source_label} · 第 {index} 次追问答复"
     story = [
         Paragraph(f"{index + 1:02d}  {question_label}", styles["exchange_title"]),
         _content_box(
@@ -131,6 +133,7 @@ def _analysis_exchange_story(
         ),
         Spacer(1, 4 * mm),
         Paragraph(_text(answer_label), styles["exchange_title"]),
+        Paragraph(_text(source_description), styles["answer_meta"]),
         Paragraph(
             _text(
                 f"形成时间：{_format_datetime(analysis.get('created_at'))}    "

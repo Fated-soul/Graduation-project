@@ -56,11 +56,20 @@ class ConversationMessageRequest(BaseModel):
     vital_signs: VitalSignsOverride | None = None
 
 
+class DatasetAnalysisTurn(BaseModel):
+    question: str
+    summary: str
+    evidence: list[str] = Field(default_factory=list)
+    recommendation: str | None = None
+    analysis_source: str | None = None
+
+
 class DatasetSessionAnalysisRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     question: str = Field(..., min_length=1, max_length=10000)
     model: str | None = Field(default=None, min_length=1, max_length=100)
+    history: list[DatasetAnalysisTurn] = Field(default_factory=list)
 
 
 class KnowledgeSearchRequest(BaseModel):

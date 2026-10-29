@@ -304,6 +304,7 @@ def build_session_analysis(
     if session is None:
         raise LookupError("session not found")
     parent_analysis = None
+    history: list[dict[str, Any]] = []
     if parent_analysis_id is not None:
         parent_analysis = public_data_repository.get_analysis(
             session_pk,
@@ -311,6 +312,7 @@ def build_session_analysis(
         )
         if parent_analysis is None:
             raise LookupError("analysis record not found")
+        history = public_data_repository.get_analysis_chain(session_pk, parent_analysis_id)
     timeline = public_data_repository.get_timeline(session_pk)
     events = timeline["modeling_events"]
     signals = timeline["signal_windows"]
@@ -421,12 +423,9 @@ def build_session_analysis(
         try:
             from backend.services import agent_service
 
-            agent_question = _analysis_question_with_context(
-                question,
-                parent_analysis,
-            )
             upstream = agent_service.analyze_dataset_session(
-                session_pk, question=agent_question, model=model
+                session_pk, question=question, model=model,
+                history=_analysis_history(history),
             )
             generated = upstream.get("data")
             if isinstance(generated, dict):
@@ -448,20 +447,11 @@ def build_session_analysis(
     return public_data_repository.create_analysis(session_pk, result)
 
 
-def _analysis_question_with_context(
-    question: str,
-    parent_analysis: dict[str, Any] | None,
-) -> str:
-    if parent_analysis is None:
-        return question
-    evidence = parent_analysis.get("evidence") or []
-    evidence_text = "\n".join(f"- {item}" for item in evidence)[:3000]
-    return (
-        "这是对上一条辅助决策的追问。请结合原决策上下文和当前会话数据，"
-        "直接回答追问；如果追问超出当前证据范围，请明确说明。\n\n"
-        f"上一条问题：{str(parent_analysis.get('question') or '综合评估')[:1500]}\n"
-        f"上一条结论：{str(parent_analysis.get('summary') or '')[:2500]}\n"
-        f"上一条判断依据：\n{evidence_text}\n"
-        f"上一条建议：{str(parent_analysis.get('recommendation') or '')[:1800]}\n\n"
-        f"本次追问：{question}"
-    )
+def _analysis_history(chain: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [{
+        "question": item.get("question") or "未记录历史问题",
+        "summary": item.get("summary") or "",
+        "evidence": item.get("evidence") or [],
+        "recommendation": item.get("recommendation"),
+        "analysis_source": item.get("analysis_source"),
+    } for item in chain]

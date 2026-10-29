@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 import json
+from math import isfinite
 from typing import Any
 
 import plotly.graph_objects as go
@@ -324,7 +325,11 @@ def _render_session_detail(session: dict[str, Any], *, key_prefix: str) -> None:
     timeline = get_timeline(session_id)
     events = timeline["modeling_events"]
     signals = timeline["signal_windows"]
-    analyses = get_session_analyses(session_id)
+    try:
+        analyses = get_session_analyses(session_id)
+    except RuntimeError as exc:
+        st.warning(str(exc))
+        analyses = []
 
     metrics = st.columns(4)
     if is_offline:
@@ -416,7 +421,7 @@ def _render_review_workspace(
                 min_value=0.0,
                 max_value=duration if duration > 0 else None,
                 step=0.1,
-                format="%.1f",
+                format="%.3f",
                 key=timestamp_key,
             )
             st.caption("播放时自动跟随；暂停、拖动进度或点击时间轴后立即同步，也可手动微调。")
@@ -532,11 +537,19 @@ def _sync_annotation_time(
 
 def _normalize_video_time(value: Any, duration_seconds: float | None) -> float | None:
     try:
-        seconds = max(0.0, float(value))
+        seconds = float(value)
     except (TypeError, ValueError):
         return None
+    if not isfinite(seconds):
+        return None
+    seconds = max(0.0, seconds)
     if duration_seconds is not None:
-        seconds = min(seconds, max(0.0, float(duration_seconds)))
+        if not isfinite(duration_seconds):
+            return None
+        duration_seconds = max(0.0, float(duration_seconds))
+        if seconds >= duration_seconds:
+            return duration_seconds
+        return min(round(seconds, 1), duration_seconds)
     return round(seconds, 1)
 
 

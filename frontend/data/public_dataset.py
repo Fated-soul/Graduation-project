@@ -153,11 +153,23 @@ def follow_up_session_analysis(
 
 
 def get_session_analyses(session_id: int) -> list[dict[str, Any]]:
-    value = api_data(
-        f"/api/public-data/sessions/{session_id}/analyses",
-        timeout=5.0,
-    )
-    return value if isinstance(value, list) else []
+    records: list[dict[str, Any]] = []
+    before_id: int | None = None
+    while True:
+        suffix = f"&before_id={before_id}" if before_id is not None else ""
+        value = api_data(
+            f"/api/public-data/sessions/{session_id}/analyses?limit=200{suffix}",
+            timeout=5.0,
+        )
+        if not isinstance(value, list):
+            raise RuntimeError("暂时无法完整读取决策对话，请稍后重试。")
+        records.extend(value)
+        if len(value) < 200:
+            return records
+        next_id = min(int(item["id"]) for item in value)
+        if before_id is not None and next_id >= before_id:
+            raise RuntimeError("决策对话读取中断，请刷新后重试。")
+        before_id = next_id
 
 
 def session_video_url(session_id: int) -> str:

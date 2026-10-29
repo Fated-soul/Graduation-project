@@ -8,6 +8,7 @@ from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 
 from agent import config
 from agent.analysis_service import compact_context
+from agent.dataset_evidence import compact_dataset_context
 from agent.rag_service import format_retrieved_context, retrieve_knowledge
 from agent.schemas import AnalysisResult
 
@@ -56,6 +57,12 @@ EMG、睡眠状态和人工复核记录。请结合当前研究阶段判断造�
 群体研究结论补造当前动物的数据；引用资料时使用[资料1]等编号。返回一个 JSON 对象，包含 summary、
 evidence、recommendation、confidence 四项；evidence 是简短字符串数组，confidence 是
 0 到 1 之间的数字。
+
+signal_windows 和事件明细可能是覆盖全程的分层抽样，evidence_coverage 明确各项输入范围；
+总量与全程统计以 signal_summary、modeling_event_summary 为准，不能用抽样条数推算总量。
+即使统计覆盖完整会话，抽样仍不等于完整原始波形，具体片段判断应说明证据范围与限制。
+窗口代表值与样本极值含义不同，不应将样本极值当作窗口均方根幅值。
+历史对话用于理解连续追问，不可将历史回答视为已证实的新观测；本轮仍以当前会话证据为准。
 """.strip()
 
 
@@ -132,6 +139,7 @@ def analyze_dataset_session(
     context: dict[str, Any],
     question: str,
     model: str | None = None,
+    history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     if not config.DASHSCOPE_API_KEY:
         raise LLMConfigurationError("DASHSCOPE_API_KEY is not configured")
@@ -144,30 +152,25 @@ def analyze_dataset_session(
         timeout=config.DASHSCOPE_TIMEOUT_SECONDS,
         max_retries=2,
     )
-    compact = {
-        "session": context.get("session"),
-        "modeling_events": (context.get("modeling_events") or [])[:180],
-        "signal_windows": (context.get("signal_windows") or [])[:360],
-        "roi_metrics": (context.get("roi_metrics") or [])[:100],
-        "annotations": (context.get("annotations") or [])[:100],
-        "related_sessions": (context.get("related_sessions") or [])[:40],
-        "cross_session_events": (context.get("cross_session_events") or [])[:240],
-        "cross_session_signal_summary": (context.get("cross_session_signal_summary") or [])[:80],
-        "absolute_alignment": context.get("absolute_alignment") or {},
-    }
+    compact = compact_dataset_context(context)
+    messages = [{"role": "system", "content": DATASET_SYSTEM_PROMPT}]
+    for turn in history or []:
+        messages.extend([
+            {"role": "user", "content": str(turn.get("question") or "未记录历史问题")},
+            {"role": "assistant", "content": json.dumps({
+                key: turn.get(key) for key in ("summary", "evidence", "recommendation", "analysis_source")
+            }, ensure_ascii=False, default=str)},
+        ])
+    messages.append({
+        "role": "user",
+        "content": f"研究问题：{question}\n\n会话证据：\n"
+        + json.dumps(compact, ensure_ascii=False, default=str)
+        + "\n\n可引用的研究资料：\n" + knowledge_context,
+    })
     try:
         completion = client.chat.completions.create(
             model=selected_model,
-            messages=[
-                {"role": "system", "content": DATASET_SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": f"研究问题：{question}\n\n会话证据：\n"
-                    + json.dumps(compact, ensure_ascii=False, default=str)
-                    + "\n\n可引用的研究资料：\n"
-                    + knowledge_context,
-                },
-            ],
+            messages=messages,
             response_format={"type": "json_object"},
             max_tokens=config.DASHSCOPE_MAX_TOKENS,
             # 会话证据摘要需要稳定的结构化正文，关闭长思考以避免输出额度

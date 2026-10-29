@@ -220,9 +220,10 @@ def analyze_session(
 def get_session_analyses(
     session_id: int,
     limit: int = Query(default=20, ge=1, le=200),
+    before_id: int | None = Query(default=None, ge=1),
 ) -> APIResponse:
     try:
-        analyses = public_data_repository.get_analyses(session_id, limit)
+        analyses = public_data_repository.get_analyses(session_id, limit, before_id)
     except Exception as exc:
         raise_database_http_exception(exc)
     return APIResponse(data=analyses)
